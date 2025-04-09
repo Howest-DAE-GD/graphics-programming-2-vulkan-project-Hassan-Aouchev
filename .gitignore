@@ -1,0 +1,48 @@
+# Ignore build directories
+/build/
+/out/
+/bin/
+/obj/
+
+# Ignore IDE-specific files
+.vscode/
+/.idea/
+/*.user
+/*.userosscache
+/*.suo
+/*.vssscc
+/.vs/
+/.vsconfig
+
+# Ignore Vulkan SDK files
+/vulkan-sdk/
+
+# Ignore OS-specific files
+Thumbs.db
+.DS_Store
+
+# Ignore compiled binaries
+*.exe
+*.dll
+*.so
+*.dylib
+*.pdb
+*.lib
+*.a
+*.o
+*.obj
+*.pdb
+
+# Ignore generated files
+*.log
+*.tmp
+
+# Ignore CMake-generated files
+CMakeCache.txt
+CMakeFiles/
+Makefile
+*.cmake
+
+# Ignore package manager files
+*.vscode/
+*.idea/
