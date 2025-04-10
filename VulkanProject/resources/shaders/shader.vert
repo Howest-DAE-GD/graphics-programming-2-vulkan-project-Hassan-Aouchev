@@ -22,4 +22,5 @@ void main() {
     gl_Position = ubo.proj * ubo.view * push.model * vec4(inPosition, 1.0);
     fragColor = inColor;
     fragTexCoord = inTexCoord;
+    fragTextureIndex = push.textureIndex;
 }

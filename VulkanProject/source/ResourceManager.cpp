@@ -9,7 +9,11 @@
 #include "stb_image.h"
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
+#include <assimp/Importer.hpp>
+#include <assimp/scene.h>
+#include <assimp/postprocess.h>
 #include <unordered_map>
+#include <iostream>
 
 void ResourceManager::CreateDepthResources(SwapChain* swapChain)
 {
@@ -97,48 +101,91 @@ void ResourceManager::CreateTextureSampler()
 
 MeshHandle ResourceManager::LoadModel(const std::string& path, int textureIndex,glm::vec3 position)
 {
-	tinyobj::attrib_t attrib;
-	std::vector<tinyobj::shape_t> shapes;
-	std::vector<tinyobj::material_t> materials;
-	std::string warn , err;
+    if (m_LoadedMeshes.count(path) > 0) {
+        MeshHandle handle = m_LoadedMeshes[path];
+        handle.textureIndex = textureIndex;
+    
+        // Add new push constant for this instance
+        m_PushConstants.push_back(PushConstantData{
+            glm::translate(glm::mat4(1.0f), position),
+            handle.textureIndex
+            });
+    
+        return handle;
+    }
+    Assimp::Importer importer;
+    const aiScene* scene = importer.ReadFile(path,
+        aiProcess_Triangulate |
+        aiProcess_GenSmoothNormals |
+        aiProcess_FlipUVs |
+        aiProcess_CalcTangentSpace);
 
-	if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, path.c_str())) {
-		throw std::runtime_error(warn + err);
-	}
+    if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode) {
+        throw std::runtime_error("ERROR::ASSIMP::" + std::string(importer.GetErrorString()));
+    }
 
     std::unordered_map<Vertex, uint32_t> uniqueVertices{};
-
-	MeshHandle handle{};
-	handle.indexOffset = static_cast<uint32_t>(m_Indices.size());
+    MeshHandle handle{};
+    handle.indexOffset = static_cast<uint32_t>(m_Indices.size());
     handle.textureIndex = textureIndex;
 
-    for (const auto& shape : shapes) {
-        for (const auto& index : shape.mesh.indices) {
-            Vertex vertex{};
+    // Process all meshes in the scene
+    for (unsigned int i = 0; i < scene->mNumMeshes; i++) {
+        aiMesh* mesh = scene->mMeshes[i];
 
-            vertex.pos = {
-                attrib.vertices[3 * index.vertex_index + 0],
-                attrib.vertices[3 * index.vertex_index + 1],
-                attrib.vertices[3 * index.vertex_index + 2]
-            };
+        // Process faces and vertices together
+        for (unsigned int f = 0; f < mesh->mNumFaces; f++) {
+            aiFace face = mesh->mFaces[f];
+            for (unsigned int idx = 0; idx < face.mNumIndices; idx++) {
+                unsigned int vertexIndex = face.mIndices[idx];
 
-            vertex.texCoord = {
-                attrib.texcoords[2 * index.texcoord_index + 0],
-                1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
-            };
+                Vertex vertex{};
+                vertex.pos = {
+                    mesh->mVertices[vertexIndex].x,
+                    mesh->mVertices[vertexIndex].y,
+                    mesh->mVertices[vertexIndex].z
+                };
 
-            vertex.color = { 1.0f, 1.0f, 1.0f };
+                if (mesh->mTextureCoords[0]) {
+                    vertex.texCoord = {
+                        mesh->mTextureCoords[0][vertexIndex].x,
+                        mesh->mTextureCoords[0][vertexIndex].y
+                    };
+                }
+                else {
+                    vertex.texCoord = { 0.0f, 0.0f };
+                }
 
-			if (uniqueVertices.count(vertex) == 0) {
-				uniqueVertices[vertex] = static_cast<uint32_t>(m_Vertices.size());
-				m_Vertices.push_back(vertex);
-			}
-            m_Indices.push_back(uniqueVertices[vertex]);
+                vertex.color = { 1.0f, 1.0f, 1.0f };
+                if (mesh->HasVertexColors(0)) {
+                    vertex.color = {
+                        mesh->mColors[0][vertexIndex].r,
+                        mesh->mColors[0][vertexIndex].g,
+                        mesh->mColors[0][vertexIndex].b
+                    };
+                }
 
+                // Use the uniqueVertices map to ensure vertex deduplication
+                if (uniqueVertices.count(vertex) == 0) {
+                    uniqueVertices[vertex] = static_cast<uint32_t>(m_Vertices.size());
+                    m_Vertices.push_back(vertex);
+                }
+
+                m_Indices.push_back(uniqueVertices[vertex]);
+            }
         }
     }
-	m_PushConstants.push_back(PushConstantData{glm::translate(glm::mat4(1.0f),position),handle.textureIndex});
-	handle.indexCount = static_cast<uint32_t>(m_Indices.size()) - handle.indexOffset;
+
+    // Create push constant data with position
+    m_PushConstants.push_back(PushConstantData{ glm::translate(glm::mat4(1.0f), position), handle.textureIndex });
+
+    // Update index count
+    handle.indexCount = static_cast<uint32_t>(m_Indices.size()) - handle.indexOffset;
+
+    m_LoadedMeshes[path] = handle;
+
+	std::cout << "--------------Loaded model: " << path << " ----------------" << std::endl;
+
     return handle;
 }
 
@@ -440,11 +487,12 @@ void ResourceManager::Create(SwapChain* swapChain, PipelineManager* pipelineMana
 {
     CreateDepthResources(swapChain);
 	CreateTextureImage(TEXTURE_PATH);
-    CreateTextureImage(TEXTURE_PATH);
+    const std::string PATH = "textures/texture.jpg";
+    CreateTextureImage(PATH);
 	CreateTextureImageView();
     CreateTextureSampler();
     m_Meshes.push_back(LoadModel(MODEL_PATH, 0, glm::vec3(0.0f,-1.f,0)));
-    m_Meshes.push_back(LoadModel(MODEL_PATH, 0, glm::vec3(0.0f, 1.f, 0)));
+    m_Meshes.push_back(LoadModel(MODEL_PATH, 1, glm::vec3(0.0f, 1.f, 0)));
     m_Meshes.push_back(LoadModel(MODEL_PATH, 0, glm::vec3(0.0f, -3.f, 0)));
 	CreateVertexBuffer();
 	CreateIndexBuffer();

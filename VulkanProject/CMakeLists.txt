@@ -52,12 +52,21 @@ file(DOWNLOAD
     SHOW_PROGRESS
 )
 
-
+FetchContent_Declare(
+    assimp
+    GIT_REPOSITORY https://github.com/assimp/assimp.git
+    GIT_TAG master  # You can specify a particular commit or tag if desired
+)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(ASSIMP_INJECT_DEBUG_POSTFIX OFF CACHE BOOL "" FORCE)
+set(ASSIMP_INSTALL OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(assimp)
 
 # Vulkan
 find_package(Vulkan REQUIRED)
-target_include_directories(${PROJECT_NAME} PRIVATE ${Vulkan_INCLUDE_DIRS} ${stb_image_SOURCE_DIR} ${EXTERNAL_DIR})
-target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan::Vulkan glfw glm)
+target_include_directories(${PROJECT_NAME} PRIVATE ${Vulkan_INCLUDE_DIRS} ${stb_image_SOURCE_DIR} ${EXTERNAL_DIR} ${assimp_SOURCE_DIR})
+target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan::Vulkan glfw glm assimp)
 
 # Shader compilation
 set(SHADER_SOURCE_DIR "${CMAKE_SOURCE_DIR}/resources/shaders")

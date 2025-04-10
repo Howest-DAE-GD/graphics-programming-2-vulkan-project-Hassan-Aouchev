@@ -152,8 +152,10 @@ public:
 	void SetModelMatrix(const glm::mat4& model,int index) {
 		m_PushConstants[index].model = model;
 	}
+    std::unordered_map<std::string, MeshHandle> m_LoadedMeshes;
 
 	std::vector<MeshHandle> GetMeshes() const { return m_Meshes; }
+
 	std::vector<void*> GetUniformBuffersMapped() { return m_UniformBuffersMapped; }
 	VkBuffer GetVertexBuffer() const { return m_VertexBuffer; }
 	VkBuffer GetIndexBuffer() const { return m_IndexBuffer; }

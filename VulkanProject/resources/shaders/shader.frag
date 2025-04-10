@@ -6,7 +6,7 @@ layout(location = 2) flat in int fragTextureIndex;
 
 layout(location = 0) out vec4 outColor;
 
-layout(set = 0, binding = 1) uniform sampler2D textures[20];
+layout(set = 0, binding = 1) uniform sampler2D textures[64];
 
 
 void main() {

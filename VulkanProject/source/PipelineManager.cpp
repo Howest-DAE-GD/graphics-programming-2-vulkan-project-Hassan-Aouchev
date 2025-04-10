@@ -90,7 +90,7 @@ void PipelineManager::CreateRenderPass()
         throw std::runtime_error("failed to create render pass!");
     }
 }
-const int MAX_TEXTURES = 20;
+const int MAX_TEXTURES = 64;
 void PipelineManager::CreateDescriptorSetLayout()
 {
     VkDescriptorSetLayoutBinding uboLayoutBinding{};
