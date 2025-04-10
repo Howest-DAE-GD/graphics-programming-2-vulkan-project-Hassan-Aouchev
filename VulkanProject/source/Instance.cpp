@@ -1,3 +1,4 @@
+#pragma once
 #include "Instance.h"
 #include <stdexcept>
 #include <iostream>

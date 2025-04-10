@@ -1,3 +1,4 @@
+#pragma once
 #include "Device.h"
 #include <stdexcept>
 #include <set>

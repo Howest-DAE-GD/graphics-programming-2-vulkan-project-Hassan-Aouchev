@@ -13,6 +13,8 @@ public:
 	
 	VkInstance GetInstance() const { return m_Instance; }
 	VkSurfaceKHR GetSurface() const { return m_Surface; }
+	VkDebugUtilsMessengerEXT GetDebugMessenger() const { return m_DebugMessenger; }
+	GLFWwindow* GetWindow() const { return m_Window; }
 
 
 private:

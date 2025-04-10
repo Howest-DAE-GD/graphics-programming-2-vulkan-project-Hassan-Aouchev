@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Add source to this project's executable.
-add_executable(${PROJECT_NAME} "VulkanProject.cpp" "source/Device.cpp" "source/Instance.cpp" "source/PipelineManager.cpp")
+add_executable(${PROJECT_NAME} "VulkanProject.cpp" "source/Device.cpp" "source/Instance.cpp" "source/PipelineManager.cpp" "source/SwapChain.cpp" "source/ResourceManager.cpp" "source/CommandManager.cpp" "source/Renderer.cpp")
 
 include(FetchContent)
 
