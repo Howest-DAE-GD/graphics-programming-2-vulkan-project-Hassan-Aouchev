@@ -2,11 +2,15 @@
 #include <vulkan/vulkan.h>
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/hash.hpp>
 #include "glm/glm.hpp"
 #include <glm/gtc/matrix_transform.hpp>
 #include <array>
 #include <string>
 
+const std::string MODEL_PATH = "model/viking_room.obj";
+const std::string TEXTURE_PATH = "textures/viking_room.png";
 
 struct Vertex {
     glm::vec3 pos;
@@ -42,7 +46,21 @@ struct Vertex {
 
         return attributeDescriptions;
     }
+    bool operator==(const Vertex& other) const {
+        return pos == other.pos && color == other.color && texCoord == other.texCoord;
+    }
+    
 };
+
+namespace std {
+    template<> struct hash<Vertex> {
+        size_t operator()(Vertex const& vertex) const {
+            return ((hash<glm::vec3>()(vertex.pos) ^
+                (hash<glm::vec3>()(vertex.color) << 1)) >> 1) ^
+                (hash<glm::vec2>()(vertex.texCoord) << 1);
+        }
+    };
+}
 
 struct UniformBufferObject {
     glm::mat4 view;
@@ -51,23 +69,6 @@ struct UniformBufferObject {
 
 struct PushConstantData {
     glm::mat4 model;
-};
-
-const std::vector<Vertex> vertices = {
-    {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-    {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-    {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-    {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
-
-    {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-    {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-    {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-    {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}
-};
-
-const std::vector<uint16_t> indices = {
-    0, 1, 2, 2, 3, 0,
-    4, 5, 6, 6, 7, 4
 };
 
 class Device;
@@ -81,6 +82,7 @@ private:
     void CreateTextureImage(const std::string& path);
     void CreateTextureImageView();
     void CreateTextureSampler();
+	void LoadModel(const std::string& path);
     void CreateVertexBuffer();
     void CreateIndexBuffer();
     void CreateUniformBuffers();
@@ -120,6 +122,9 @@ private:
 
     PushConstantData m_PushConstant;
 
+    std::vector<Vertex> m_Vertices;
+    std::vector<uint32_t> m_Indices;
+
     const int MAX_FRAMES_IN_FLIGHT = 2;
 public:
     ResourceManager(Device* device);
@@ -143,6 +148,8 @@ public:
 
 	PushConstantData& GetPushConstant() { return m_PushConstant; }
 
+	std::vector<Vertex> GetVertices() const { return m_Vertices; }
+	std::vector<uint32_t> GetIndices() const { return m_Indices; }
 	VkImageView GetDepthImageView() const { return m_DepthImageView; }
     VkImageView CreateImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags);
     void CreateDepthResources(SwapChain* swapChain);

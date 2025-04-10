@@ -42,9 +42,19 @@ FetchContent_Declare(
 # Make sure it's available
 FetchContent_MakeAvailable(stb_image)
 
+set(EXTERNAL_DIR "${CMAKE_BINARY_DIR}/external")
+file(MAKE_DIRECTORY ${EXTERNAL_DIR})
+
+# Download tinyobjloader directly
+file(DOWNLOAD 
+    https://raw.githubusercontent.com/tinyobjloader/tinyobjloader/master/tiny_obj_loader.h
+    ${EXTERNAL_DIR}/tiny_obj_loader.h
+    SHOW_PROGRESS
+)
+
 # Vulkan
 find_package(Vulkan REQUIRED)
-target_include_directories(${PROJECT_NAME} PRIVATE ${Vulkan_INCLUDE_DIRS} ${stb_image_SOURCE_DIR})
+target_include_directories(${PROJECT_NAME} PRIVATE ${Vulkan_INCLUDE_DIRS} ${stb_image_SOURCE_DIR} ${EXTERNAL_DIR})
 target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan::Vulkan glfw glm)
 
 # Shader compilation
@@ -57,8 +67,12 @@ set(TEXTURE_SOURCE_DIR "${CMAKE_SOURCE_DIR}/resources/textures")
 set(TEXTURE_BINARY_DIR "${CMAKE_BINARY_DIR}/textures")
 file(GLOB TEXTURE_SOURCE_FILES "${TEXTURE_SOURCE_DIR}/*.png" "${TEXTURE_SOURCE_DIR}/*.jpg")
 
+set(MODEL_SOURCE_DIR "${CMAKE_SOURCE_DIR}/resources/model")
+set(MODEL_BINARY_DIR "${CMAKE_BINARY_DIR}/model")
+file(GLOB MODEL_SOURCE_FILES "${MODEL_SOURCE_DIR}/*.obj")
+
 # Make sure output directory exists
-file(MAKE_DIRECTORY ${SHADER_BINARY_DIR} ${TEXTURE_BINARY_DIR})
+file(MAKE_DIRECTORY ${SHADER_BINARY_DIR} ${TEXTURE_BINARY_DIR} ${MODEL_BINARY_DIR})
 
 # Find glslc compiler (Vulkan SDK)
 find_program(GLSLC_EXECUTABLE glslc HINTS ENV VULKAN_SDK PATH_SUFFIXES bin)
@@ -96,6 +110,20 @@ foreach(TEXTURE ${TEXTURE_SOURCE_FILES})
 endforeach()
 add_custom_target(Textures ALL DEPENDS ${TEXTURE_BINARY_FILES})
 add_dependencies(${PROJECT_NAME} Textures)
+
+set(MODEL_BINARY_FILES "")
+foreach(MODEL ${MODEL_SOURCE_FILES})
+    get_filename_component(FILENAME ${MODEL} NAME)
+    set(DESTINATION_FILE ${MODEL_BINARY_DIR}/${FILENAME})
+    add_custom_command(
+        OUTPUT ${DESTINATION_FILE}
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MODEL} ${DESTINATION_FILE}
+        DEPENDS ${MODEL}
+    )
+    list(APPEND MODEL_BINARY_FILES ${DESTINATION_FILE})
+endforeach()
+add_custom_target(Model ALL DEPENDS ${MODEL_BINARY_FILES})
+add_dependencies(${PROJECT_NAME} Model)
 
 # Add include directories for shaders
 target_include_directories(${PROJECT_NAME} PUBLIC ${SHADER_SOURCE_DIR})
