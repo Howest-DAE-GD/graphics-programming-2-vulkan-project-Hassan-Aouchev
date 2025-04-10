@@ -90,7 +90,7 @@ void PipelineManager::CreateRenderPass()
         throw std::runtime_error("failed to create render pass!");
     }
 }
-
+const int MAX_TEXTURES = 20;
 void PipelineManager::CreateDescriptorSetLayout()
 {
     VkDescriptorSetLayoutBinding uboLayoutBinding{};
@@ -103,7 +103,7 @@ void PipelineManager::CreateDescriptorSetLayout()
 
     VkDescriptorSetLayoutBinding samplerLayoutBinding{};
     samplerLayoutBinding.binding = 1;
-    samplerLayoutBinding.descriptorCount = 1;
+    samplerLayoutBinding.descriptorCount = MAX_TEXTURES;
     samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     samplerLayoutBinding.pImmutableSamplers = nullptr;
     samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
@@ -226,8 +226,6 @@ void PipelineManager::CreateGraphicsPipeline()
     pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     pushConstantRange.offset = 0;
     pushConstantRange.size = sizeof(PushConstantData);
-
-    m_ResourceManager->SetModelMatrix(glm::mat4(1.0f));
 
     std::vector <VkDynamicState> dynamicStates = {
         VK_DYNAMIC_STATE_VIEWPORT,

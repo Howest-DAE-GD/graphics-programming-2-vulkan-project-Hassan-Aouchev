@@ -10,8 +10,6 @@
 #include <chrono>
 #include <GLFW/glfw3.h>
 
-const int MAX_FRAMES_IN_FLIGHT = 2;
-
 
 Renderer::Renderer(Device* device, PipelineManager* pipelineManager,
                     SwapChain* swapChain, CommandManager* commandManager,
@@ -40,17 +38,22 @@ void Renderer::UpdatePushConstants(VkCommandBuffer commandBuffer)
     static auto startTime = std::chrono::high_resolution_clock::now();
     auto currentTime = std::chrono::high_resolution_clock::now();
     float time = std::chrono::duration<float, std::chrono::seconds::period >(currentTime - startTime).count();
+    
+    int index = 0;
 
-    m_ResourceManager->SetModelMatrix(glm::rotate(glm::mat4(1.0f), time * glm::radians(90.f), glm::vec3(0.0f, 0.0f, 1.0f)));
+    for (const auto& model : m_ResourceManager->GetPushConstants())
+    {
+        vkCmdPushConstants(
+            commandBuffer,
+            m_PipelineManager->GetPipelineLayout(),
+            VK_SHADER_STAGE_VERTEX_BIT,
+            0,
+            sizeof(PushConstantData),
+            &model
+        );
+        index++;
+    }
 
-    vkCmdPushConstants(
-        commandBuffer,
-        m_PipelineManager->GetPipelineLayout(),
-        VK_SHADER_STAGE_VERTEX_BIT,
-        0,
-        sizeof(PushConstantData),
-        &m_ResourceManager->GetPushConstant()
-    );
 }
 
 void Renderer::UpdateUniformBuffer(uint32_t currentImage)
@@ -199,20 +202,45 @@ void Renderer::RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t image
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_PipelineManager->GetGraphicsPipeline());
 
-    UpdatePushConstants(m_CommandManager->GetCommandBuffers()[m_CurrentFrame]);
+    const auto& meshes = m_ResourceManager->GetMeshes(); // Get all meshes
+    const auto& pushConstants = m_ResourceManager->GetPushConstants(); // Get all push constants
 
-    VkBuffer vertexBuffers[] = { m_ResourceManager->GetVertexBuffer()};
+    // Bind vertex and index buffers once if they're shared
+    VkBuffer vertexBuffers[] = { m_ResourceManager->GetVertexBuffer() };
     VkDeviceSize offsets[] = { 0 };
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(commandBuffer, m_ResourceManager->GetIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_PipelineManager->GetPipelineLayout(), 0, 1, &m_ResourceManager->GetDescriptorSets()[m_CurrentFrame], 0, nullptr);
-    vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(m_ResourceManager->GetIndices().size()), 1, 0, 0, 0);
+
+    for (size_t i = 0; i < meshes.size(); ++i) {
+        const auto& mesh = meshes[i];
+
+        // Make sure you have a push constant for each mesh
+        if (i < pushConstants.size()) {
+            // Update push constants for this specific mesh
+            vkCmdPushConstants(
+                commandBuffer,
+                m_PipelineManager->GetPipelineLayout(),
+                VK_SHADER_STAGE_VERTEX_BIT,
+                0,
+                sizeof(PushConstantData),
+                &pushConstants[i]
+            );
+        }
+
+        // Bind descriptor set (if needed per mesh)
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            m_PipelineManager->GetPipelineLayout(), 0, 1,
+            &m_ResourceManager->GetDescriptorSets()[m_CurrentFrame], 0, nullptr);
+
+        // Draw the current mesh
+        vkCmdDrawIndexed(commandBuffer, mesh.indexCount, 1, mesh.indexOffset, 0, 0);
+
+    }
     vkCmdEndRenderPass(commandBuffer);
 
     if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
         throw std::runtime_error("failed to record command buffer!");
     }
-
 }
 
 void Renderer::RecreateSwapChain()

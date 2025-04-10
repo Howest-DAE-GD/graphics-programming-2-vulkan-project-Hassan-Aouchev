@@ -3,8 +3,6 @@
 #include <stdexcept>
 #include "Device.h"
 
-const int MAX_FRAMES_IN_FLIGHT = 2;
-
 CommandManager::CommandManager(Device* device) :
 	m_Device(device)
 {

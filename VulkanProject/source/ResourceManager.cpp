@@ -21,6 +21,7 @@ void ResourceManager::CreateDepthResources(SwapChain* swapChain)
 
 void ResourceManager::CreateTextureImage(const std::string& path)
 {
+
     int texWidth, texHeight, texChannels;
     stbi_uc* pixels = stbi_load(path.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
     VkDeviceSize imageSize = texWidth * texHeight * 4;
@@ -28,6 +29,10 @@ void ResourceManager::CreateTextureImage(const std::string& path)
     if (!pixels) {
         throw std::runtime_error("failed to load texture image!");
     }
+
+    m_Textures.push_back(Texture{});
+    int currentTextureIndex = static_cast<int>(m_Textures.size() - 1);
+
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
     CreateBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
@@ -38,12 +43,12 @@ void ResourceManager::CreateTextureImage(const std::string& path)
     vkUnmapMemory(m_Device->GetDevice(), stagingBufferMemory);
     stbi_image_free(pixels);
 
-    CreateImage(texWidth, texHeight, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_TextureImage, m_TextureImageMemory);
+    CreateImage(texWidth, texHeight, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_Textures[currentTextureIndex].image, m_Textures[currentTextureIndex].imageMemory);
 
-    TransitionImageLayout(m_TextureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-    CopyBufferToImage(stagingBuffer, m_TextureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
+    TransitionImageLayout(m_Textures[currentTextureIndex].image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    CopyBufferToImage(stagingBuffer, m_Textures[currentTextureIndex].image, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
 
-    TransitionImageLayout(m_TextureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    TransitionImageLayout(m_Textures[currentTextureIndex].image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
     vkDestroyBuffer(m_Device->GetDevice(), stagingBuffer, nullptr);
     vkFreeMemory(m_Device->GetDevice(), stagingBufferMemory, nullptr);
@@ -52,7 +57,10 @@ void ResourceManager::CreateTextureImage(const std::string& path)
 
 void ResourceManager::CreateTextureImageView()
 {
-    m_TextureImageView = CreateImageView(m_TextureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT);
+	for (auto& texture : m_Textures)
+	{
+		texture.imageView = CreateImageView(texture.image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT);
+	}
 }
 
 void ResourceManager::CreateTextureSampler()
@@ -79,12 +87,15 @@ void ResourceManager::CreateTextureSampler()
     samplerInfo.minLod = 0.0f;
     samplerInfo.maxLod = 0.0f;
 
-    if (vkCreateSampler(m_Device->GetDevice(), &samplerInfo, nullptr, &m_TextureSampler) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create texture sampler!");
-    }
+	for (auto& texture : m_Textures)
+	{
+		if (vkCreateSampler(m_Device->GetDevice(), &samplerInfo, nullptr, &texture.sampler) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create texture sampler!");
+		}
+	}
 }
 
-void ResourceManager::LoadModel(const std::string& path)
+MeshHandle ResourceManager::LoadModel(const std::string& path, int textureIndex,glm::vec3 position)
 {
 	tinyobj::attrib_t attrib;
 	std::vector<tinyobj::shape_t> shapes;
@@ -96,6 +107,10 @@ void ResourceManager::LoadModel(const std::string& path)
 	}
 
     std::unordered_map<Vertex, uint32_t> uniqueVertices{};
+
+	MeshHandle handle{};
+	handle.indexOffset = static_cast<uint32_t>(m_Indices.size());
+    handle.textureIndex = textureIndex;
 
     for (const auto& shape : shapes) {
         for (const auto& index : shape.mesh.indices) {
@@ -122,7 +137,9 @@ void ResourceManager::LoadModel(const std::string& path)
 
         }
     }
-    bool breakpoint = 0;
+	m_PushConstants.push_back(PushConstantData{glm::translate(glm::mat4(1.0f),position),handle.textureIndex});
+	handle.indexCount = static_cast<uint32_t>(m_Indices.size()) - handle.indexOffset;
+    return handle;
 }
 
 void ResourceManager::CreateVertexBuffer()
@@ -222,10 +239,17 @@ void ResourceManager::CreateDescriptorSets(PipelineManager* pipelineManager)
         bufferInfo.offset = 0;
         bufferInfo.range = sizeof(UniformBufferObject);
 
-        VkDescriptorImageInfo imageInfo{};
-        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfo.imageView = m_TextureImageView;
-        imageInfo.sampler = m_TextureSampler;
+        std::vector<VkDescriptorImageInfo> imageInfos;
+
+        for (const auto& tex : m_Textures)
+        {
+            VkDescriptorImageInfo imageInfo{};
+            imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            imageInfo.imageView = tex.imageView;
+            imageInfo.sampler = tex.sampler;
+			imageInfos.push_back(imageInfo);
+        }
+
 
         std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
 
@@ -242,8 +266,8 @@ void ResourceManager::CreateDescriptorSets(PipelineManager* pipelineManager)
         descriptorWrites[1].dstBinding = 1;
         descriptorWrites[1].dstArrayElement = 0;
         descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[1].descriptorCount = 1;
-        descriptorWrites[1].pImageInfo = &imageInfo;
+        descriptorWrites[1].descriptorCount = m_Textures.size();
+        descriptorWrites[1].pImageInfo = imageInfos.data();
 
         vkUpdateDescriptorSets(m_Device->GetDevice(), static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
@@ -376,11 +400,14 @@ ResourceManager::ResourceManager(Device* device)
 
 ResourceManager::~ResourceManager()
 {
-    vkDestroySampler(m_Device->GetDevice(), m_TextureSampler, nullptr);
-	vkDestroyImageView(m_Device->GetDevice(), m_TextureImageView, nullptr);
+	for (auto& texture : m_Textures)
+	{
+		vkDestroyImageView(m_Device->GetDevice(), texture.imageView, nullptr);
+		vkDestroySampler(m_Device->GetDevice(), texture.sampler, nullptr);
 
-	vkDestroyImage(m_Device->GetDevice(), m_TextureImage, nullptr);
-	vkFreeMemory(m_Device->GetDevice(), m_TextureImageMemory, nullptr);
+        vkDestroyImage(m_Device->GetDevice(), texture.image, nullptr);
+        vkFreeMemory(m_Device->GetDevice(), texture.imageMemory, nullptr);
+	}
 
 
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
@@ -413,9 +440,12 @@ void ResourceManager::Create(SwapChain* swapChain, PipelineManager* pipelineMana
 {
     CreateDepthResources(swapChain);
 	CreateTextureImage(TEXTURE_PATH);
+    CreateTextureImage(TEXTURE_PATH);
 	CreateTextureImageView();
     CreateTextureSampler();
-    LoadModel(MODEL_PATH);
+    m_Meshes.push_back(LoadModel(MODEL_PATH, 0, glm::vec3(0.0f,-1.f,0)));
+    m_Meshes.push_back(LoadModel(MODEL_PATH, 0, glm::vec3(0.0f, 1.f, 0)));
+    m_Meshes.push_back(LoadModel(MODEL_PATH, 0, glm::vec3(0.0f, -3.f, 0)));
 	CreateVertexBuffer();
 	CreateIndexBuffer();
 	CreateUniformBuffers();

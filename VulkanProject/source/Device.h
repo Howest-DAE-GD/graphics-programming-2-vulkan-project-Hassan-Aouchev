@@ -4,6 +4,8 @@
 #include <optional>
 #include <vector>
 
+const int MAX_FRAMES_IN_FLIGHT = 2;
+
 struct QueueFamilyIndices {
 	std::optional<uint32_t> graphicsFamily;
 	std::optional<uint32_t> presentFamily;
@@ -44,6 +46,8 @@ private:
 	VkQueue m_GraphicsQueue;
 	VkQueue m_PresentQueue;
 public:
+
+
 	Device(VkInstance instance, VkSurfaceKHR surface);
 	~Device() {
 		vkDestroyDevice(m_Device, nullptr);

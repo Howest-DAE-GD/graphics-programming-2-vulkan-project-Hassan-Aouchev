@@ -69,6 +69,13 @@ struct UniformBufferObject {
 
 struct PushConstantData {
     glm::mat4 model;
+    alignas(16) int textureIndex;
+};
+
+struct MeshHandle {
+    uint32_t indexOffset;
+    uint32_t indexCount;
+    int textureIndex;
 };
 
 class Device;
@@ -82,7 +89,7 @@ private:
     void CreateTextureImage(const std::string& path);
     void CreateTextureImageView();
     void CreateTextureSampler();
-	void LoadModel(const std::string& path);
+    MeshHandle LoadModel(const std::string& path, int textureIndex, glm::vec3 position);
     void CreateVertexBuffer();
     void CreateIndexBuffer();
     void CreateUniformBuffers();
@@ -96,10 +103,15 @@ private:
     void CreateImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory);
     uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
-    VkImage m_TextureImage;
-    VkDeviceMemory m_TextureImageMemory;
-    VkImageView m_TextureImageView;
-    VkSampler m_TextureSampler;
+    std::vector<MeshHandle> m_Meshes;
+
+    struct Texture {
+        VkImageView imageView;
+        VkSampler sampler;
+        VkImage image;
+        VkDeviceMemory imageMemory;
+    };
+	std::vector<Texture> m_Textures;
 
     VkBuffer m_VertexBuffer;
     VkDeviceMemory m_VertexBufferMemory;
@@ -120,7 +132,7 @@ private:
     VkDeviceMemory m_DepthImageMemory;
     VkImageView m_DepthImageView;
 
-    PushConstantData m_PushConstant;
+    std::vector<PushConstantData> m_PushConstants;
 
     std::vector<Vertex> m_Vertices;
     std::vector<uint32_t> m_Indices;
@@ -137,16 +149,17 @@ public:
 
     void Create(SwapChain* swapChain, PipelineManager* pipelineManager);
 
-	void SetModelMatrix(const glm::mat4& model) {
-		m_PushConstant.model = model;
+	void SetModelMatrix(const glm::mat4& model,int index) {
+		m_PushConstants[index].model = model;
 	}
 
+	std::vector<MeshHandle> GetMeshes() const { return m_Meshes; }
 	std::vector<void*> GetUniformBuffersMapped() { return m_UniformBuffersMapped; }
 	VkBuffer GetVertexBuffer() const { return m_VertexBuffer; }
 	VkBuffer GetIndexBuffer() const { return m_IndexBuffer; }
 	std::vector<VkDescriptorSet>& GetDescriptorSets() { return m_DescriptorSets; }
 
-	PushConstantData& GetPushConstant() { return m_PushConstant; }
+    std::vector<PushConstantData>& GetPushConstants() { return m_PushConstants; }
 
 	std::vector<Vertex> GetVertices() const { return m_Vertices; }
 	std::vector<uint32_t> GetIndices() const { return m_Indices; }

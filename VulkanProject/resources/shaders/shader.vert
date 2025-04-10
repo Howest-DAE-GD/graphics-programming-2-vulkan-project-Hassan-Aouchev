@@ -6,6 +6,7 @@ layout(location = 2) in vec2 inTexCoord;
 
 layout(location = 0) out vec3 fragColor;
 layout(location = 1) out vec2 fragTexCoord;
+layout(location = 2) out int fragTextureIndex;
 
 layout(binding = 0) uniform UniformBufferObject{
     mat4 view;
@@ -14,6 +15,7 @@ layout(binding = 0) uniform UniformBufferObject{
 
 layout(push_constant) uniform PushConstantData {
     mat4 model;
+    int textureIndex;
 } push;
 
 void main() {
