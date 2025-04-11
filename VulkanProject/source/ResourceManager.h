@@ -8,6 +8,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <array>
 #include <string>
+#include <iostream>
 
 const std::string MODEL_PATH = "model/viking_room.obj";
 const std::string TEXTURE_PATH = "textures/viking_room.png";
@@ -76,6 +77,7 @@ struct MeshHandle {
     uint32_t indexOffset;
     uint32_t indexCount;
     int textureIndex;
+	glm::mat4 modelMatrix;
 };
 
 class Device;
@@ -89,7 +91,6 @@ private:
     void CreateTextureImage(const std::string& path);
     void CreateTextureImageView();
     void CreateTextureSampler();
-    MeshHandle LoadModel(const std::string& path, int textureIndex, glm::vec3 position);
     void CreateVertexBuffer();
     void CreateIndexBuffer();
     void CreateUniformBuffers();
@@ -103,7 +104,6 @@ private:
     void CreateImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory);
     uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
-    std::vector<MeshHandle> m_Meshes;
 
     struct Texture {
         VkImageView imageView;
@@ -133,7 +133,10 @@ private:
     VkImageView m_DepthImageView;
 
     std::vector<PushConstantData> m_PushConstants;
+    std::unordered_map<std::string, uint32_t> m_TextureLookup;
+    std::vector<std::string> m_TexturePaths;
 
+    std::vector<MeshHandle> m_Meshes;
     std::vector<Vertex> m_Vertices;
     std::vector<uint32_t> m_Indices;
 
@@ -145,6 +148,23 @@ public:
 
     void CleanDepth();
 
+    void AddModel(MeshHandle meshHandle) { 
+		MeshHandle newMeshHandle = meshHandle;
+        m_Meshes.push_back(meshHandle);
+		m_PushConstants.push_back({ meshHandle.modelMatrix, meshHandle.textureIndex+1 });
+    }
+    int AddTexture(const std::string path) { 
+        auto it = m_TextureLookup.find(path);
+        if (it != m_TextureLookup.end()) {
+            return it->second;
+        }
+
+        uint32_t index = static_cast<uint32_t>(m_TexturePaths.size());
+        m_TexturePaths.push_back(path);
+        m_TextureLookup[path] = index;
+        return index;
+}
+
     void SetCommandManager(CommandManager* commandManager);
 
     void Create(SwapChain* swapChain, PipelineManager* pipelineManager);
@@ -152,10 +172,8 @@ public:
 	void SetModelMatrix(const glm::mat4& model,int index) {
 		m_PushConstants[index].model = model;
 	}
-    std::unordered_map<std::string, MeshHandle> m_LoadedMeshes;
 
-	std::vector<MeshHandle> GetMeshes() const { return m_Meshes; }
-
+    std::vector<MeshHandle> GetMeshes() const { return m_Meshes; }
 	std::vector<void*> GetUniformBuffersMapped() { return m_UniformBuffersMapped; }
 	VkBuffer GetVertexBuffer() const { return m_VertexBuffer; }
 	VkBuffer GetIndexBuffer() const { return m_IndexBuffer; }
@@ -163,8 +181,8 @@ public:
 
     std::vector<PushConstantData>& GetPushConstants() { return m_PushConstants; }
 
-	std::vector<Vertex> GetVertices() const { return m_Vertices; }
-	std::vector<uint32_t> GetIndices() const { return m_Indices; }
+	std::vector<Vertex>& GetVertices() { return m_Vertices; }
+	std::vector<uint32_t>& GetIndices() { return m_Indices; }
 	VkImageView GetDepthImageView() const { return m_DepthImageView; }
     VkImageView CreateImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags);
     void CreateDepthResources(SwapChain* swapChain);

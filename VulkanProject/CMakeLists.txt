@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Add source to this project's executable.
-add_executable(${PROJECT_NAME} "VulkanProject.cpp" "source/Device.cpp" "source/Instance.cpp" "source/PipelineManager.cpp" "source/SwapChain.cpp" "source/ResourceManager.cpp" "source/CommandManager.cpp" "source/Renderer.cpp")
+add_executable(${PROJECT_NAME} "VulkanProject.cpp" "source/Device.cpp" "source/Instance.cpp" "source/PipelineManager.cpp" "source/SwapChain.cpp" "source/ResourceManager.cpp" "source/CommandManager.cpp" "source/Renderer.cpp" "source/Scene.cpp")
 
 include(FetchContent)
 
@@ -135,6 +135,34 @@ foreach(MODEL ${MODEL_SOURCE_FILES})
 endforeach()
 add_custom_target(Model ALL DEPENDS ${MODEL_BINARY_FILES})
 add_dependencies(${PROJECT_NAME} Model)
+
+# Define the source and destination directories
+set(SCENE_DIR "${CMAKE_SOURCE_DIR}/resources/Scene")
+set(DEST_DIR "${CMAKE_BINARY_DIR}/scene")
+
+# Ensure the source directory exists
+if(EXISTS "${SCENE_DIR}")
+    message(STATUS "Scene directory exists: ${SCENE_DIR}")
+else()
+    message(FATAL_ERROR "Scene directory does not exist at: ${SCENE_DIR}")
+endif()
+
+# Copy all files, including .obj and .mtl from the Scene directory to the destination directory
+file(COPY "${SCENE_DIR}/" DESTINATION "${DEST_DIR}" FILES_MATCHING PATTERN "*.obj" PATTERN "*.mtl")
+
+# Define the source and destination directories for textures
+set(TEXTURE_SOURCE_DIR "${CMAKE_SOURCE_DIR}/resources/Scene/textures")
+set(TEXTURE_DEST_DIR "${CMAKE_BINARY_DIR}/scene/textures")
+
+# Ensure the source directory exists
+if(EXISTS "${TEXTURE_SOURCE_DIR}")
+    message(STATUS "Texture directory exists: ${TEXTURE_SOURCE_DIR}")
+else()
+    message(FATAL_ERROR "Texture directory does not exist at: ${TEXTURE_SOURCE_DIR}")
+endif()
+
+# Copy all texture files (e.g., .png, .jpg) from the source directory to the destination directory
+file(COPY "${TEXTURE_SOURCE_DIR}/" DESTINATION "${TEXTURE_DEST_DIR}" FILES_MATCHING PATTERN "*.png" PATTERN "*.jpg")
 
 # Add include directories for shaders
 target_include_directories(${PROJECT_NAME} PUBLIC ${SHADER_SOURCE_DIR})

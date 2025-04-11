@@ -9,11 +9,9 @@
 #include "stb_image.h"
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
-#include <assimp/Importer.hpp>
-#include <assimp/scene.h>
-#include <assimp/postprocess.h>
 #include <unordered_map>
 #include <iostream>
+#include <filesystem>
 
 void ResourceManager::CreateDepthResources(SwapChain* swapChain)
 {
@@ -22,6 +20,7 @@ void ResourceManager::CreateDepthResources(SwapChain* swapChain)
     m_DepthImageView = CreateImageView(m_DepthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
     TransitionImageLayout(m_DepthImage, depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 }
+
 
 void ResourceManager::CreateTextureImage(const std::string& path)
 {
@@ -32,6 +31,9 @@ void ResourceManager::CreateTextureImage(const std::string& path)
 
     if (!pixels) {
         throw std::runtime_error("failed to load texture image!");
+    }
+    else {
+		std::cout << "loaded texture: " << path << std::endl;
     }
 
     m_Textures.push_back(Texture{});
@@ -97,96 +99,6 @@ void ResourceManager::CreateTextureSampler()
 			throw std::runtime_error("failed to create texture sampler!");
 		}
 	}
-}
-
-MeshHandle ResourceManager::LoadModel(const std::string& path, int textureIndex,glm::vec3 position)
-{
-    if (m_LoadedMeshes.count(path) > 0) {
-        MeshHandle handle = m_LoadedMeshes[path];
-        handle.textureIndex = textureIndex;
-    
-        // Add new push constant for this instance
-        m_PushConstants.push_back(PushConstantData{
-            glm::translate(glm::mat4(1.0f), position),
-            handle.textureIndex
-            });
-    
-        return handle;
-    }
-    Assimp::Importer importer;
-    const aiScene* scene = importer.ReadFile(path,
-        aiProcess_Triangulate |
-        aiProcess_GenSmoothNormals |
-        aiProcess_FlipUVs |
-        aiProcess_CalcTangentSpace);
-
-    if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode) {
-        throw std::runtime_error("ERROR::ASSIMP::" + std::string(importer.GetErrorString()));
-    }
-
-    std::unordered_map<Vertex, uint32_t> uniqueVertices{};
-    MeshHandle handle{};
-    handle.indexOffset = static_cast<uint32_t>(m_Indices.size());
-    handle.textureIndex = textureIndex;
-
-    // Process all meshes in the scene
-    for (unsigned int i = 0; i < scene->mNumMeshes; i++) {
-        aiMesh* mesh = scene->mMeshes[i];
-
-        // Process faces and vertices together
-        for (unsigned int f = 0; f < mesh->mNumFaces; f++) {
-            aiFace face = mesh->mFaces[f];
-            for (unsigned int idx = 0; idx < face.mNumIndices; idx++) {
-                unsigned int vertexIndex = face.mIndices[idx];
-
-                Vertex vertex{};
-                vertex.pos = {
-                    mesh->mVertices[vertexIndex].x,
-                    mesh->mVertices[vertexIndex].y,
-                    mesh->mVertices[vertexIndex].z
-                };
-
-                if (mesh->mTextureCoords[0]) {
-                    vertex.texCoord = {
-                        mesh->mTextureCoords[0][vertexIndex].x,
-                        mesh->mTextureCoords[0][vertexIndex].y
-                    };
-                }
-                else {
-                    vertex.texCoord = { 0.0f, 0.0f };
-                }
-
-                vertex.color = { 1.0f, 1.0f, 1.0f };
-                if (mesh->HasVertexColors(0)) {
-                    vertex.color = {
-                        mesh->mColors[0][vertexIndex].r,
-                        mesh->mColors[0][vertexIndex].g,
-                        mesh->mColors[0][vertexIndex].b
-                    };
-                }
-
-                // Use the uniqueVertices map to ensure vertex deduplication
-                if (uniqueVertices.count(vertex) == 0) {
-                    uniqueVertices[vertex] = static_cast<uint32_t>(m_Vertices.size());
-                    m_Vertices.push_back(vertex);
-                }
-
-                m_Indices.push_back(uniqueVertices[vertex]);
-            }
-        }
-    }
-
-    // Create push constant data with position
-    m_PushConstants.push_back(PushConstantData{ glm::translate(glm::mat4(1.0f), position), handle.textureIndex });
-
-    // Update index count
-    handle.indexCount = static_cast<uint32_t>(m_Indices.size()) - handle.indexOffset;
-
-    m_LoadedMeshes[path] = handle;
-
-	std::cout << "--------------Loaded model: " << path << " ----------------" << std::endl;
-
-    return handle;
 }
 
 void ResourceManager::CreateVertexBuffer()
@@ -486,14 +398,24 @@ void ResourceManager::SetCommandManager(CommandManager* commandManager)
 void ResourceManager::Create(SwapChain* swapChain, PipelineManager* pipelineManager)
 {
     CreateDepthResources(swapChain);
-	CreateTextureImage(TEXTURE_PATH);
-    const std::string PATH = "textures/texture.jpg";
-    CreateTextureImage(PATH);
+
+    CreateTextureImage("textures/error.png");
+	// create texture here from the paths that the scene class has loaded
+	for (const auto& path : m_TexturePaths)
+	{
+		CreateTextureImage(path);
+	}
+
+	for (const auto& path : m_TexturePaths)
+	{
+		std::cout << " texture: " << path << std::endl;
+	}
+
 	CreateTextureImageView();
     CreateTextureSampler();
-    m_Meshes.push_back(LoadModel(MODEL_PATH, 0, glm::vec3(0.0f,-1.f,0)));
-    m_Meshes.push_back(LoadModel(MODEL_PATH, 1, glm::vec3(0.0f, 1.f, 0)));
-    m_Meshes.push_back(LoadModel(MODEL_PATH, 0, glm::vec3(0.0f, -3.f, 0)));
+
+	// scene class should have loaded the vertex and index data
+
 	CreateVertexBuffer();
 	CreateIndexBuffer();
 	CreateUniformBuffers();

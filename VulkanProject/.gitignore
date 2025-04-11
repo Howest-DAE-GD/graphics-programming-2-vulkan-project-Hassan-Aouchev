@@ -3,6 +3,7 @@
 /out/
 /bin/
 /obj/
+/resources/Scene/
 
 # Ignore IDE-specific files
 .vscode/

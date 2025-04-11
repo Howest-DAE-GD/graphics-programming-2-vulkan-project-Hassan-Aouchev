@@ -29,6 +29,7 @@
 #include "source/CommandManager.h"
 #include "source/PipelineManager.h"
 #include "source/Renderer.h"
+#include "source/Scene.h"
 
 
 VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger) {
@@ -72,6 +73,8 @@ private:
 	Renderer* m_Renderer;
 	SwapChain* m_SwapChain;
 
+	Scene* m_Scene;
+
     void initWindow() {
         glfwInit();
 
@@ -89,6 +92,10 @@ private:
 		m_SwapChain = new SwapChain(m_PhysicalDevice, m_Instance, m_ResourceManager);
 		m_PipelineManager = new PipelineManager(m_PhysicalDevice, m_ResourceManager,m_SwapChain);
 		m_CommandManager = new CommandManager(m_PhysicalDevice);
+
+		m_Scene = new Scene(m_ResourceManager, m_PipelineManager);
+
+		m_Scene->LoadScene("scene/sponza.obj");
 
 		m_Renderer = new Renderer(m_PhysicalDevice, m_PipelineManager, m_SwapChain, m_CommandManager, m_ResourceManager, m_Instance);
 

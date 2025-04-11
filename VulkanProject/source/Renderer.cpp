@@ -9,7 +9,7 @@
 #include <array>
 #include <chrono>
 #include <GLFW/glfw3.h>
-
+#include <algorithm>
 
 Renderer::Renderer(Device* device, PipelineManager* pipelineManager,
                     SwapChain* swapChain, CommandManager* commandManager,
@@ -62,18 +62,30 @@ void Renderer::UpdateUniformBuffer(uint32_t currentImage)
     auto currentTime = std::chrono::high_resolution_clock::now();
     float time = std::chrono::duration<float, std::chrono::seconds::period >(currentTime - startTime).count();
 
+    // Camera position with sinusoidal movement on the Y-axis over time
+    float cameraY = 50.0f;  // Oscillate around 1000 on Y-axis
+    glm::vec3 cameraPosition = glm::vec3(800.f, cameraY, -30.f);  // Update Y position over time
+    glm::vec3 target = glm::vec3(0.0f, 400.0f - 250.0f * sin(time), -30.0f);  // Camera looking at the origin (adjust as needed)
+    glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);  // Y-axis as the "up" direction
+
+    // Create the view matrix using glm::lookAt
+    glm::mat4 viewMatrix = glm::lookAt(cameraPosition, target, up);
+
+    // Prepare the uniform buffer object
     UniformBufferObject ubo{};
-    //ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.f), glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.view = viewMatrix;
+    ubo.proj = glm::perspective(
+        glm::radians(45.0f),
+        m_SwapChain->GetSwapChainExtent().width / (float)m_SwapChain->GetSwapChainExtent().height,
+        0.1f,   // Near plane
+        5000.0f // Far plane
+    );
 
-    ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.proj[1][1] *= -1; // Flip Y-axis for Vulkan coordinate system
 
-    ubo.proj = glm::perspective(glm::radians(45.0f), m_SwapChain->GetSwapChainExtent().width / (float)m_SwapChain->GetSwapChainExtent().height, 0.1f, 10.0f);
-
-    ubo.proj[1][1] *= -1;
-
+    // Copy the updated uniform data to the buffer
     memcpy(m_ResourceManager->GetUniformBuffersMapped()[currentImage], &ubo, sizeof(ubo));
 }
-
 void Renderer::DrawFrame()
 {
     vkWaitForFences(m_Device->GetDevice(), 1, &m_InFlightFences[m_CurrentFrame], VK_TRUE, UINT64_MAX);
