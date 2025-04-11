@@ -136,33 +136,55 @@ endforeach()
 add_custom_target(Model ALL DEPENDS ${MODEL_BINARY_FILES})
 add_dependencies(${PROJECT_NAME} Model)
 
-# Define the source and destination directories
-set(SCENE_DIR "${CMAKE_SOURCE_DIR}/resources/Scene")
-set(DEST_DIR "${CMAKE_BINARY_DIR}/scene")
+# Define the directory for scene assets
+set(SCENE_ASSETS_DIR "${CMAKE_BINARY_DIR}/scene")
+file(MAKE_DIRECTORY ${SCENE_ASSETS_DIR})
 
-# Ensure the source directory exists
-if(EXISTS "${SCENE_DIR}")
-    message(STATUS "Scene directory exists: ${SCENE_DIR}")
-else()
-    message(FATAL_ERROR "Scene directory does not exist at: ${SCENE_DIR}")
+# Download the assets zip file
+file(DOWNLOAD 
+    "https://github.com/Hassan-Aouchev/CrytekScene/archive/main.zip"
+    "${SCENE_ASSETS_DIR}/CrytekScene.zip"
+    SHOW_PROGRESS
+    STATUS DOWNLOAD_STATUS
+)
+
+list(GET DOWNLOAD_STATUS 0 STATUS_CODE)
+if(NOT STATUS_CODE EQUAL 0)
+    message(FATAL_ERROR "Failed to download scene assets.")
 endif()
 
-# Copy all files, including .obj and .mtl from the Scene directory to the destination directory
-file(COPY "${SCENE_DIR}/" DESTINATION "${DEST_DIR}" FILES_MATCHING PATTERN "*.obj" PATTERN "*.mtl")
+# Create a temporary directory for extraction
+set(TEMP_EXTRACT_DIR "${CMAKE_BINARY_DIR}/temp_extract")
+file(MAKE_DIRECTORY ${TEMP_EXTRACT_DIR})
 
-# Define the source and destination directories for textures
-set(TEXTURE_SOURCE_DIR "${CMAKE_SOURCE_DIR}/resources/Scene/textures")
-set(TEXTURE_DEST_DIR "${CMAKE_BINARY_DIR}/scene/textures")
+# Extract the archive to the temporary directory
+execute_process(
+    COMMAND ${CMAKE_COMMAND} -E tar xf "${SCENE_ASSETS_DIR}/CrytekScene.zip"
+    WORKING_DIRECTORY ${TEMP_EXTRACT_DIR}
+    RESULT_VARIABLE EXTRACT_RESULT
+)
 
-# Ensure the source directory exists
-if(EXISTS "${TEXTURE_SOURCE_DIR}")
-    message(STATUS "Texture directory exists: ${TEXTURE_SOURCE_DIR}")
-else()
-    message(FATAL_ERROR "Texture directory does not exist at: ${TEXTURE_SOURCE_DIR}")
+if(NOT EXTRACT_RESULT EQUAL 0)
+    message(FATAL_ERROR "Failed to extract scene assets.")
 endif()
 
-# Copy all texture files (e.g., .png, .jpg) from the source directory to the destination directory
-file(COPY "${TEXTURE_SOURCE_DIR}/" DESTINATION "${TEXTURE_DEST_DIR}" FILES_MATCHING PATTERN "*.png" PATTERN "*.jpg")
+# Copy contents from the CrytekScene-main folder to the scene directory
+execute_process(
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${TEMP_EXTRACT_DIR}/CrytekScene-main/" "${SCENE_ASSETS_DIR}/"
+    RESULT_VARIABLE COPY_RESULT
+)
 
-# Add include directories for shaders
-target_include_directories(${PROJECT_NAME} PUBLIC ${SHADER_SOURCE_DIR})
+if(NOT COPY_RESULT EQUAL 0)
+    message(FATAL_ERROR "Failed to copy scene assets to final location.")
+endif()
+
+# Clean up temporary files
+execute_process(
+    COMMAND ${CMAKE_COMMAND} -E remove_directory "${TEMP_EXTRACT_DIR}"
+)
+execute_process(
+    COMMAND ${CMAKE_COMMAND} -E remove "${SCENE_ASSETS_DIR}/CrytekScene.zip"
+)
+
+# Add the scene directory to include paths
+include_directories(${SCENE_ASSETS_DIR}/textures)
