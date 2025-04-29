@@ -10,9 +10,6 @@
 #include <string>
 #include <iostream>
 
-const std::string MODEL_PATH = "model/viking_room.obj";
-const std::string TEXTURE_PATH = "textures/viking_room.png";
-
 struct Vertex {
     glm::vec3 pos;
     glm::vec3 color;

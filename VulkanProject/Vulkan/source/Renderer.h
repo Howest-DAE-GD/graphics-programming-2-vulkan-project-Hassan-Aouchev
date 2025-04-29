@@ -18,6 +18,7 @@ public:
 	void UpdateUniformBuffer(uint32_t currentImage);
 	void DrawFrame();
 	void CreateSyncObjects();
+	void RecreateSwapChain();
 private:
 
 	static void framebufferResizeCallback(GLFWwindow* window, int width, int height) {
@@ -26,7 +27,6 @@ private:
 	}
 
 	void RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
-	void RecreateSwapChain();
 	std::vector<VkSemaphore> m_ImageAvailableSemaphores;
 	std::vector<VkSemaphore> m_RenderFinishedSemaphores;
 	std::vector<VkFence> m_InFlightFences;

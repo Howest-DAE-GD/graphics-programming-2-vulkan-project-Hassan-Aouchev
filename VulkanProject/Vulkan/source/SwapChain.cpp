@@ -118,6 +118,10 @@ void SwapChain::CleanupSwapchain()
         vkDestroyImageView(m_Device->GetDevice(), m_SwapChainImageViews[i], nullptr);
     }
     vkDestroySwapchainKHR(m_Device->GetDevice(), m_SwapChain, nullptr);
+
+    m_SwapChainFramebuffers.clear();
+    m_SwapChain = nullptr;
+
 }
 
 VkSurfaceFormatKHR SwapChain::ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats)

@@ -25,9 +25,6 @@ void Scene::LoadScene(const std::string& scenePath)
         throw std::runtime_error("ERROR::ASSIMP::" + std::string(importer.GetErrorString()));
     }
 
-    m_MeshToNodeMap.clear();
-    BuildMeshToNodeMap(scene->mRootNode);
-
     LoadModel(scenePath, baseDir, scene);
 }
 
@@ -114,6 +111,7 @@ MeshHandle Scene::LoadMeshData(unsigned int meshIndex, aiMesh* mesh, const aiSce
         }
         else {
             meshHandle.textureIndex = 0;
+			//std::cout << "No texture found for mesh: " << mesh->mName.C_Str() << std::endl;
         }
     }
     else {
@@ -121,35 +119,4 @@ MeshHandle Scene::LoadMeshData(unsigned int meshIndex, aiMesh* mesh, const aiSce
     }
 	std::cout << "----------Mesh loaded: " << mesh->mName.C_Str()<<" --------------" << std::endl;
     return meshHandle;
-}
-const aiNode* Scene::FindNodeForMesh(const aiNode* node, unsigned int meshIndex) const {
-    auto it = m_MeshToNodeMap.find(meshIndex);
-    if (it != m_MeshToNodeMap.end()) {
-        return it->second;
-    }
-    return nullptr;
-}
-void Scene::BuildMeshToNodeMap(const aiNode* node) {
-    // Process current node's meshes
-    for (unsigned int i = 0; i < node->mNumMeshes; i++) {
-        unsigned int meshIndex = node->mMeshes[i];
-        m_MeshToNodeMap[meshIndex] = node;
-    }
-
-    // Process child nodes
-    for (unsigned int i = 0; i < node->mNumChildren; i++) {
-        BuildMeshToNodeMap(node->mChildren[i]);
-    }
-}
-
-glm::mat4 Scene::GetNodeWorldTransform(const aiNode* node) const {
-    aiMatrix4x4 transform = node->mTransformation;
-    const aiNode* current = node->mParent;
-
-    while (current) {
-        transform = current->mTransformation * transform;
-        current = current->mParent;
-    }
-
-    return glm::make_mat4(&transform.a1);
 }

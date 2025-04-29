@@ -380,7 +380,6 @@ ResourceManager::~ResourceManager()
 
 	vkDestroyBuffer(m_Device->GetDevice(), m_IndexBuffer, nullptr);
 	vkFreeMemory(m_Device->GetDevice(), m_IndexBufferMemory, nullptr);
-
 }
 
 void ResourceManager::CleanDepth()
