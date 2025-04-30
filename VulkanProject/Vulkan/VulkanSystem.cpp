@@ -36,11 +36,11 @@ bool VulkanSystem::Initialize(WindowManager* windowManager) {
         m_PhysicalDevice = new Device(m_Instance->GetInstance(), m_Instance->GetSurface());
         m_ResourceManager = new ResourceManager(m_PhysicalDevice);
         m_SwapChain = new SwapChain(m_PhysicalDevice, m_Instance, m_ResourceManager);
+        m_Scene = new Scene(m_ResourceManager);
+        m_Scene->LoadScene(m_Config.scenePath);
         m_PipelineManager = new PipelineManager(m_PhysicalDevice, m_ResourceManager, m_SwapChain);
         m_CommandManager = new CommandManager(m_PhysicalDevice);
 
-        m_Scene = new Scene(m_ResourceManager, m_PipelineManager);
-        m_Scene->LoadScene(m_Config.scenePath);
 
         m_Renderer = new Renderer(m_PhysicalDevice, m_PipelineManager, m_SwapChain,
             m_CommandManager, m_ResourceManager, m_Instance);

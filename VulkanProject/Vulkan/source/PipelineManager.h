@@ -30,6 +30,7 @@ public:
 	VkPipeline GetGraphicsPipeline() const { return m_GraphicsPipeline; }
 	VkPipelineLayout GetPipelineLayout() const { return m_PipelineLayout; }
 
+
 private:
 	void CreateRenderPass();
 	void CreateDescriptorSetLayout();

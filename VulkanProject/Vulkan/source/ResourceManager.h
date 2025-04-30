@@ -162,6 +162,7 @@ public:
         return index;
 }
 
+    int GetTextureAmount() const { return m_TexturePaths.size()+1; }
     void SetCommandManager(CommandManager* commandManager);
 
     void Create(SwapChain* swapChain, PipelineManager* pipelineManager);

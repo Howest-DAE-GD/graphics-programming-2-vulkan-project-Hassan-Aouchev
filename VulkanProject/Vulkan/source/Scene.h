@@ -6,11 +6,9 @@
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 
-
-class PipelineManager;
 class Scene {
 public:
-    Scene(ResourceManager* resourceManager, PipelineManager* pipelineManager);
+    Scene(ResourceManager* resourceManager);
 
     void LoadScene(const std::string& scenePath);
 
@@ -21,6 +19,5 @@ public:
 
 private:
     ResourceManager* m_ResourceManager;
-    PipelineManager* m_PipelineManager;
 
 };

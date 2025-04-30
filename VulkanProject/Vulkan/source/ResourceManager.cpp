@@ -28,7 +28,6 @@ void ResourceManager::CreateTextureImage(const std::string& path)
     int texWidth, texHeight, texChannels;
     stbi_uc* pixels = stbi_load(path.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
     VkDeviceSize imageSize = texWidth * texHeight * 4;
-
     if (!pixels) {
         throw std::runtime_error("failed to load texture image!");
     }
@@ -166,7 +165,7 @@ void ResourceManager::CreateDescriptorPools()
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[1].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    poolSizes[1].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT * GetTextureAmount());
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -399,16 +398,21 @@ void ResourceManager::Create(SwapChain* swapChain, PipelineManager* pipelineMana
     CreateDepthResources(swapChain);
 
     CreateTextureImage("textures/error.png");
+
+
+    int textureAmount{ 0 };
+
 	// create texture here from the paths that the scene class has loaded
 	for (const auto& path : m_TexturePaths)
 	{
 		CreateTextureImage(path);
+        textureAmount++;
 	}
-
-	for (const auto& path : m_TexturePaths)
-	{
-		std::cout << " texture: " << path << std::endl;
-	}
+    std::cout << textureAmount << " amount of textures loaded." << std::endl;
+	//for (const auto& path : m_TexturePaths)
+	//{
+	//	std::cout << " texture: " << path << std::endl;
+	//}
 
 	CreateTextureImageView();
     CreateTextureSampler();

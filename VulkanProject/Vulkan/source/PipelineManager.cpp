@@ -90,7 +90,6 @@ void PipelineManager::CreateRenderPass()
         throw std::runtime_error("failed to create render pass!");
     }
 }
-const int MAX_TEXTURES = 64;
 void PipelineManager::CreateDescriptorSetLayout()
 {
     VkDescriptorSetLayoutBinding uboLayoutBinding{};
@@ -101,9 +100,11 @@ void PipelineManager::CreateDescriptorSetLayout()
     uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     uboLayoutBinding.pImmutableSamplers = nullptr;
 
+    uint32_t textureAmount = m_ResourceManager->GetTextureAmount();
+
     VkDescriptorSetLayoutBinding samplerLayoutBinding{};
     samplerLayoutBinding.binding = 1;
-    samplerLayoutBinding.descriptorCount = MAX_TEXTURES;
+    samplerLayoutBinding.descriptorCount = textureAmount;
     samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     samplerLayoutBinding.pImmutableSamplers = nullptr;
     samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
@@ -127,6 +128,34 @@ void PipelineManager::CreateGraphicsPipeline()
     VkShaderModule vertShaderModule = CreateShaderModule(vertShaderCode);
     VkShaderModule fragShaderModule = CreateShaderModule(fragShaderCode);
 
+    struct SpecializationData {
+        uint32_t maxTextureCount;
+    } specializationData;
+
+    specializationData.maxTextureCount = m_ResourceManager->GetTextureAmount();
+
+    //=======================================================================
+    // !!!! IMPORTANT QUESTION FOR TEACHER !!!!
+    //=======================================================================
+    // why does this code work on two computers but not the third?
+    // 
+    // the issue: In descriptor pool creation i only allocate MAX_FRAMES_IN_FLIGHT
+    // descriptors (2-3), but in the shader i declared an array of 64 textures.
+    // 
+    // specialization constant fixes it by setting the exact texture count:
+    //=======================================================================
+
+    VkSpecializationMapEntry specializationMapEntry{};
+    specializationMapEntry.constantID = 0;  
+    specializationMapEntry.offset = offsetof(SpecializationData, maxTextureCount);
+    specializationMapEntry.size = sizeof(uint32_t);
+
+    VkSpecializationInfo specializationInfo{};
+    specializationInfo.mapEntryCount = 1;
+    specializationInfo.pMapEntries = &specializationMapEntry;
+    specializationInfo.dataSize = sizeof(SpecializationData);
+    specializationInfo.pData = &specializationData;
+
     VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
     vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -138,6 +167,7 @@ void PipelineManager::CreateGraphicsPipeline()
     fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
     fragShaderStageInfo.module = fragShaderModule;
     fragShaderStageInfo.pName = "main";
+    fragShaderStageInfo.pSpecializationInfo = &specializationInfo;
 
     VkPipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo,fragShaderStageInfo };
 

@@ -2,8 +2,8 @@
 #include <iostream>
 #include <glm/gtc/type_ptr.hpp>
 
-Scene::Scene(ResourceManager* resourceManager, PipelineManager* pipelineManager)
-    : m_ResourceManager(resourceManager), m_PipelineManager(pipelineManager) {}
+Scene::Scene(ResourceManager* resourceManager)
+    : m_ResourceManager(resourceManager) {}
 
 void Scene::LoadScene(const std::string& scenePath)
 {
