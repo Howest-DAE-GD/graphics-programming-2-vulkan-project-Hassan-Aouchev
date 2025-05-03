@@ -2,6 +2,7 @@
 #include "CommandManager.h"
 #include <stdexcept>
 #include "Device.h"
+#include <string>
 
 CommandManager::CommandManager(Device* device) :
 	m_Device(device)
@@ -21,14 +22,41 @@ void CommandManager::EndSingleTimeCommands(VkCommandBuffer commandBuffer)
 {
     vkEndCommandBuffer(commandBuffer);
 
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &commandBuffer;
+    if (m_Device->IsSynchronization2Supported()) {
 
-    vkQueueSubmit(m_Device->GetGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE);
+        VkCommandBufferSubmitInfo cmdBufferSubmitInfo{};
+		cmdBufferSubmitInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+		cmdBufferSubmitInfo.commandBuffer = commandBuffer;
+		cmdBufferSubmitInfo.deviceMask = 0;
+
+        VkSubmitInfo2 submitInfo{};
+		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+        submitInfo.flags = 0;
+		submitInfo.waitSemaphoreInfoCount = 0;
+        submitInfo.pWaitSemaphoreInfos = nullptr;
+		submitInfo.commandBufferInfoCount = 1;
+		submitInfo.pCommandBufferInfos = &cmdBufferSubmitInfo;
+		submitInfo.signalSemaphoreInfoCount = 0;
+		submitInfo.pSignalSemaphoreInfos = nullptr;
+
+        VkResult result = vkQueueSubmit2(m_Device->GetGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE);
+        if (result != VK_SUCCESS) {
+            throw std::runtime_error("Failed to submit command buffer with vkQueueSubmit2! Error code: " + std::to_string(result));
+        }
+    }
+    else {
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &commandBuffer;
+
+        VkResult result = vkQueueSubmit(m_Device->GetGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE);
+        if (result != VK_SUCCESS) {
+            throw std::runtime_error("Failed to submit command buffer! Error code: " + std::to_string(result));
+        }
+    }
+
     vkQueueWaitIdle(m_Device->GetGraphicsQueue());
-
     vkFreeCommandBuffers(m_Device->GetDevice(), m_CommandPool, 1, &commandBuffer);
 }
 

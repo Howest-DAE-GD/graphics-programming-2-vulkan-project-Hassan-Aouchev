@@ -2,6 +2,7 @@
 
 #include "../Common/ApplicationConfig.h"
 #include "../Window/WindowManager.h"
+#define VK_ENABLE_BETA_EXTENSIONS
 #include <vulkan/vulkan.h>
 #include <vector>
 
@@ -79,6 +80,7 @@ private:
 #endif
 
     VkDebugUtilsMessengerEXT m_DebugMessenger = VK_NULL_HANDLE;
+
 
     Instance* m_Instance = nullptr;
     Device* m_PhysicalDevice = nullptr;

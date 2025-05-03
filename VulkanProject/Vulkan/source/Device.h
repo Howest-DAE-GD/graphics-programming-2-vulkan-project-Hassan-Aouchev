@@ -36,7 +36,8 @@ private:
 	};
 
 	const std::vector<const char*> m_DeviceExtensions = {
-	VK_KHR_SWAPCHAIN_EXTENSION_NAME
+		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+		VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME
 	};
 
 	VkDevice m_Device;
@@ -47,11 +48,14 @@ private:
 	VkQueue m_PresentQueue;
 public:
 
+	bool IsSynchronization2Supported() const { return m_Synchronization2Supported; }
 
 	Device(VkInstance instance, VkSurfaceKHR surface);
 	~Device() {
 		vkDestroyDevice(m_Device, nullptr);
 	}
+
+	bool m_Synchronization2Supported = false;
 
 	QueueFamilyIndices FindQueueFamilies(VkPhysicalDevice device);
 	SwapChainSupportDetails QuerySwapChainSupport(VkPhysicalDevice device);

@@ -104,36 +104,72 @@ void Renderer::DrawFrame()
     vkResetCommandBuffer(m_CommandManager->GetCommandBuffers()[m_CurrentFrame], 0);
 
     UpdateUniformBuffer(m_CurrentFrame);
-
     RecordCommandBuffer(m_CommandManager->GetCommandBuffers()[m_CurrentFrame], imageIndex);
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-    VkSemaphore waitSemaphores[] = { m_ImageAvailableSemaphores[m_CurrentFrame] };
-    VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
-    submitInfo.waitSemaphoreCount = 1;
-    submitInfo.pWaitSemaphores = waitSemaphores;
-    submitInfo.pWaitDstStageMask = waitStages;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &m_CommandManager->GetCommandBuffers()[m_CurrentFrame];
-    VkSemaphore signalSemaphores[] = { m_RenderFinishedSemaphores[m_CurrentFrame] };
-    submitInfo.signalSemaphoreCount = 1;
-    submitInfo.pSignalSemaphores = signalSemaphores;
+    if (m_Device->IsSynchronization2Supported()) {
+		VkCommandBufferSubmitInfo cmdBufferSubmitInfo{};
+		cmdBufferSubmitInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+		cmdBufferSubmitInfo.commandBuffer = m_CommandManager->GetCommandBuffers()[m_CurrentFrame];
+		cmdBufferSubmitInfo.deviceMask = 0;
 
-    if (vkQueueSubmit(m_Device->GetGraphicsQueue(), 1, &submitInfo, m_InFlightFences[m_CurrentFrame]) != VK_SUCCESS)
-    {
-        throw std::runtime_error("failed to submit draw  command buffer!");
+		VkSemaphoreSubmitInfo waitSemaphoreSubmitInfo{};
+		waitSemaphoreSubmitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+		waitSemaphoreSubmitInfo.semaphore = m_ImageAvailableSemaphores[m_CurrentFrame];
+		waitSemaphoreSubmitInfo.stageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		waitSemaphoreSubmitInfo.deviceIndex = 0;
+		waitSemaphoreSubmitInfo.value = 0;
+
+		VkSemaphoreSubmitInfo signalSemaphoreSubmitInfo{};
+		signalSemaphoreSubmitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+		signalSemaphoreSubmitInfo.semaphore = m_RenderFinishedSemaphores[m_CurrentFrame];
+		signalSemaphoreSubmitInfo.stageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		signalSemaphoreSubmitInfo.deviceIndex = 0;
+		signalSemaphoreSubmitInfo.value = 0;
+
+		VkSubmitInfo2 submitInfo{};
+		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+        submitInfo.flags = 0;
+		submitInfo.waitSemaphoreInfoCount = 1;
+		submitInfo.pWaitSemaphoreInfos = &waitSemaphoreSubmitInfo;
+		submitInfo.commandBufferInfoCount = 1;
+		submitInfo.pCommandBufferInfos = &cmdBufferSubmitInfo;
+		submitInfo.signalSemaphoreInfoCount = 1;
+		submitInfo.pSignalSemaphoreInfos = &signalSemaphoreSubmitInfo;
+
+        if (vkQueueSubmit2(m_Device->GetGraphicsQueue(), 1, &submitInfo,
+            m_InFlightFences[m_CurrentFrame]) != VK_SUCCESS) {
+            throw std::runtime_error("failed to submit draw command buffer!");
+        }
+    }
+    else {
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+
+        VkSemaphore waitSemaphores[] = { m_ImageAvailableSemaphores[m_CurrentFrame] };
+        VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+        submitInfo.waitSemaphoreCount = 1;
+        submitInfo.pWaitSemaphores = waitSemaphores;
+        submitInfo.pWaitDstStageMask = waitStages;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &m_CommandManager->GetCommandBuffers()[m_CurrentFrame];
+        VkSemaphore signalSemaphores[] = { m_RenderFinishedSemaphores[m_CurrentFrame] };
+        submitInfo.signalSemaphoreCount = 1;
+        submitInfo.pSignalSemaphores = signalSemaphores;
+
+        if (vkQueueSubmit(m_Device->GetGraphicsQueue(), 1, &submitInfo, m_InFlightFences[m_CurrentFrame]) != VK_SUCCESS)
+        {
+            throw std::runtime_error("failed to submit draw  command buffer!");
+        }
     }
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 
     presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores = signalSemaphores;
+    presentInfo.pWaitSemaphores = &m_RenderFinishedSemaphores[m_CurrentFrame];
     VkSwapchainKHR swapChains[] = { m_SwapChain->GetSwapChain()};
     presentInfo.swapchainCount = 1;
     presentInfo.pSwapchains = swapChains;
     presentInfo.pImageIndices = &imageIndex;
-
     presentInfo.pResults = nullptr;
 
     result = vkQueuePresentKHR(m_Device->GetPresentQueue(), &presentInfo);

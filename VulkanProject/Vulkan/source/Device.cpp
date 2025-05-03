@@ -2,6 +2,7 @@
 #include "Device.h"
 #include <stdexcept>
 #include <set>
+#include <iostream>
 
 #ifdef NDEBUG
 const bool enableValidationLayers = false;
@@ -36,8 +37,22 @@ void Device::PickPhysicalDevice(VkInstance instance)
 bool Device::IsDeviceSuitable(VkPhysicalDevice device)
 {
     QueueFamilyIndices indices = FindQueueFamilies(device);
-
     bool extensionsSupported = CheckDeviceExtensionSupport(device);
+
+    bool syncSupported = false;
+	uint32_t extensionCount;
+	vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
+	std::vector<VkExtensionProperties> availableExtensions(extensionCount);
+	vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions.data());
+
+    for (const auto& extension : availableExtensions)
+    {
+        if (strcmp(extension.extensionName, VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME) == 0)
+        {
+			syncSupported = true;
+            break;
+        }
+    }
 
     VkPhysicalDeviceFeatures supportedFeatures;
     vkGetPhysicalDeviceFeatures(device, &supportedFeatures);
@@ -48,7 +63,7 @@ bool Device::IsDeviceSuitable(VkPhysicalDevice device)
         swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
     }
 
-    return indices.IsComplete() && extensionsSupported && swapChainAdequate && supportedFeatures.samplerAnisotropy;
+    return indices.IsComplete() && extensionsSupported && swapChainAdequate && supportedFeatures.samplerAnisotropy && syncSupported;
 }
 
 bool Device::CheckDeviceExtensionSupport(VkPhysicalDevice device)
@@ -63,6 +78,14 @@ bool Device::CheckDeviceExtensionSupport(VkPhysicalDevice device)
 
     for (const auto& extension : availableExtensions) {
         requiredExtensions.erase(extension.extensionName);
+    }
+
+    m_Synchronization2Supported = false;
+    for (const auto& extension : availableExtensions) {
+        if (strcmp(extension.extensionName, VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME) == 0) {
+            m_Synchronization2Supported = true;
+            break;
+        }
     }
 
     return requiredExtensions.empty();
@@ -104,7 +127,6 @@ QueueFamilyIndices Device::FindQueueFamilies(VkPhysicalDevice device)
 void Device::CreateLogicalDevice()
 {
     QueueFamilyIndices indices = FindQueueFamilies(m_PhysicalDevice);
-
     std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
     std::set<uint32_t> uniqueQueueFamilies = { indices.graphicsFamily.value(), indices.presentFamily.value() };
 
@@ -118,17 +140,26 @@ void Device::CreateLogicalDevice()
         queueCreateInfos.push_back(queueCreateInfo);
     }
 
-    VkPhysicalDeviceFeatures deviceFeatures{};
-    deviceFeatures.samplerAnisotropy = VK_TRUE;
+    VkPhysicalDeviceVulkan13Features vulkan13Features{};
+    vulkan13Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+    vulkan13Features.pNext = nullptr;
+    vulkan13Features.synchronization2 = VK_TRUE;
+
+    VkPhysicalDeviceVulkan12Features vulkan12Features{};
+    vulkan12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+    vulkan12Features.pNext = &vulkan13Features;
+
+    VkPhysicalDeviceFeatures2 deviceFeatures2{};
+    deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    deviceFeatures2.pNext = &vulkan12Features;
+    deviceFeatures2.features.samplerAnisotropy = VK_TRUE;
 
     VkDeviceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-
+    createInfo.pNext = &deviceFeatures2;
     createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
     createInfo.pQueueCreateInfos = queueCreateInfos.data();
-
-    createInfo.pEnabledFeatures = &deviceFeatures;
-
+    createInfo.pEnabledFeatures = nullptr;
     createInfo.enabledExtensionCount = static_cast<uint32_t>(m_DeviceExtensions.size());
     createInfo.ppEnabledExtensionNames = m_DeviceExtensions.data();
 
