@@ -7,6 +7,7 @@ class Instance;
 class ResourceManager;
 class GLFWwindow;
 class PipelineManager;
+struct Image;
 class SwapChain
 {
 public:
@@ -21,13 +22,15 @@ public:
 	void CreateSwapChain();
 	void CreateImageViews();
 	void CreateFrameBuffers(PipelineManager* pipelineManager, ResourceManager* resourceManager);
+	std::vector<VkImageView> GetSwapChainImageViews() const { return m_SwapChainImageViews; }
+	std::vector<Image*> GetSwapChainImages() const { return m_SwapChainImages; }
 private:
 
 	VkSurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
 	VkPresentModeKHR ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
 	VkExtent2D ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
 	VkSwapchainKHR m_SwapChain;
-	std::vector<VkImage> m_SwapChainImages;
+	std::vector<Image*> m_SwapChainImages;
 	VkFormat m_SwapChainImageFormat;
 	VkExtent2D m_SwapChainExtent;
 	std::vector<VkImageView> m_SwapChainImageViews;

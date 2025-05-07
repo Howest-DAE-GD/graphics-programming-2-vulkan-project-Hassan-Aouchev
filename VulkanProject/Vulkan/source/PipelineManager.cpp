@@ -43,7 +43,6 @@ void PipelineManager::CreateRenderPass()
     colorAttachmentRef.attachment = 0;
     colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-
     VkAttachmentDescription depthAttachment{};
     depthAttachment.format = m_ResourceManager->FindDepthFormat();
     depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -334,8 +333,19 @@ void PipelineManager::CreateGraphicsPipeline()
         throw std::runtime_error("failed to create pipeline cache!");
     }
 
+    VkFormat colorFormat = m_SwapChain->GetSwapChainImageFormat();
+
+	VkPipelineRenderingCreateInfo pipelineRenderingCreateInfo{};
+	pipelineRenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
+	pipelineRenderingCreateInfo.pNext = VK_NULL_HANDLE;
+	pipelineRenderingCreateInfo.colorAttachmentCount = 1;
+	pipelineRenderingCreateInfo.pColorAttachmentFormats = &colorFormat;
+	pipelineRenderingCreateInfo.depthAttachmentFormat = m_ResourceManager->FindDepthFormat();
+	pipelineRenderingCreateInfo.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
+
     VkGraphicsPipelineCreateInfo pipelineInfo{};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+	pipelineInfo.pNext = &pipelineRenderingCreateInfo;
     pipelineInfo.stageCount = 2;
     pipelineInfo.pStages = shaderStages;
     pipelineInfo.pVertexInputState = &vertexInputInfo;
@@ -350,7 +360,7 @@ void PipelineManager::CreateGraphicsPipeline()
 
     pipelineInfo.layout = m_PipelineLayout;
 
-    pipelineInfo.renderPass = m_RenderPass;
+    pipelineInfo.renderPass = nullptr; // used m_RenderPassm_RenderPass
     pipelineInfo.subpass = 0;
 
     pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;

@@ -77,6 +77,12 @@ struct MeshHandle {
 	glm::mat4 modelMatrix;
 };
 
+struct Image {
+	VkImage image;
+	VkImageLayout currentLayout;
+	VkFormat format;
+};
+
 class Device;
 class SwapChain;
 class CommandManager;
@@ -98,14 +104,14 @@ private:
     void CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
     void CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
     void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);
-    void CreateImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory);
+    void CreateImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, Image& image, VkDeviceMemory& imageMemory);
     uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
 
     struct Texture {
         VkImageView imageView;
         VkSampler sampler;
-        VkImage image;
+        Image image;
         VkDeviceMemory imageMemory;
     };
 	std::vector<Texture> m_Textures;
@@ -125,7 +131,7 @@ private:
 	Device* m_Device;
 	CommandManager* m_CommandManager;
 
-    VkImage m_DepthImage;
+    Image m_DepthImage;
     VkDeviceMemory m_DepthImageMemory;
     VkImageView m_DepthImageView;
 
@@ -182,9 +188,13 @@ public:
 	std::vector<Vertex>& GetVertices() { return m_Vertices; }
 	std::vector<uint32_t>& GetIndices() { return m_Indices; }
 	VkImageView GetDepthImageView() const { return m_DepthImageView; }
+    Image GetDepthImage() const { return m_DepthImage; }
     VkImageView CreateImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags);
     void CreateDepthResources(SwapChain* swapChain);
     VkFormat FindSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
     VkFormat FindDepthFormat();
-    void TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
+    void TransitionImageLayout(Image image, VkImageLayout newLayout, VkPipelineStageFlags2 srcStageMask,
+                                                                     VkPipelineStageFlags2 srcAccessMask,
+                                                                     VkPipelineStageFlags2 dstStageMask,
+                                                                     VkPipelineStageFlags2 dstAccessMask);
 };

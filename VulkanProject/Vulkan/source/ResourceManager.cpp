@@ -17,8 +17,13 @@ void ResourceManager::CreateDepthResources(SwapChain* swapChain)
 {
     VkFormat depthFormat = FindDepthFormat();
     CreateImage(swapChain->GetSwapChainExtent().width, swapChain->GetSwapChainExtent().height, depthFormat, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_DepthImage, m_DepthImageMemory);
-    m_DepthImageView = CreateImageView(m_DepthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
-    TransitionImageLayout(m_DepthImage, depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+    m_DepthImageView = CreateImageView(m_DepthImage.image, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
+    TransitionImageLayout(m_DepthImage, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                          VK_PIPELINE_STAGE_2_NONE,
+                          VK_ACCESS_2_NONE,
+                          VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+                          VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT
+    );
 }
 
 
@@ -50,10 +55,20 @@ void ResourceManager::CreateTextureImage(const std::string& path)
 
     CreateImage(texWidth, texHeight, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_Textures[currentTextureIndex].image, m_Textures[currentTextureIndex].imageMemory);
 
-    TransitionImageLayout(m_Textures[currentTextureIndex].image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-    CopyBufferToImage(stagingBuffer, m_Textures[currentTextureIndex].image, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
+    TransitionImageLayout(m_Textures[currentTextureIndex].image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                          VK_PIPELINE_STAGE_2_NONE,
+                          VK_ACCESS_2_NONE,
+                          VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                          VK_ACCESS_2_TRANSFER_WRITE_BIT
+        );
+    CopyBufferToImage(stagingBuffer, m_Textures[currentTextureIndex].image.image, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
 
-    TransitionImageLayout(m_Textures[currentTextureIndex].image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    TransitionImageLayout(m_Textures[currentTextureIndex].image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                          VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                          VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                          VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                          VK_ACCESS_2_SHADER_READ_BIT
+        );
 
     vkDestroyBuffer(m_Device->GetDevice(), stagingBuffer, nullptr);
     vkFreeMemory(m_Device->GetDevice(), stagingBufferMemory, nullptr);
@@ -64,7 +79,7 @@ void ResourceManager::CreateTextureImageView()
 {
 	for (auto& texture : m_Textures)
 	{
-		texture.imageView = CreateImageView(texture.image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT);
+		texture.imageView = CreateImageView(texture.image.image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT);
 	}
 }
 
@@ -299,7 +314,7 @@ void ResourceManager::CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, 
     vkBindBufferMemory(m_Device->GetDevice(), buffer, bufferMemory, 0);
 }
 
-void ResourceManager::CreateImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory)
+void ResourceManager::CreateImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, Image& image, VkDeviceMemory& imageMemory)
 {
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -317,22 +332,25 @@ void ResourceManager::CreateImage(uint32_t width, uint32_t height, VkFormat form
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     imageInfo.flags = 0;
 
-    if (vkCreateImage(m_Device->GetDevice(), &imageInfo, nullptr, &image) != VK_SUCCESS) {
+    if (vkCreateImage(m_Device->GetDevice(), &imageInfo, nullptr, &image.image) != VK_SUCCESS) {
         throw std::runtime_error("failed to create image!");
     }
 
     VkMemoryRequirements memRequirements;
-    vkGetImageMemoryRequirements(m_Device->GetDevice(), image, &memRequirements);
+    vkGetImageMemoryRequirements(m_Device->GetDevice(), image.image, &memRequirements);
 
     VkMemoryAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     allocInfo.allocationSize = memRequirements.size;
     allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, properties);
 
+    image.currentLayout = imageInfo.initialLayout;
+	image.format = format;
+
     if (vkAllocateMemory(m_Device->GetDevice(), &allocInfo, nullptr, &imageMemory) != VK_SUCCESS) {
         throw std::runtime_error("failed to allocate image memory!");
     }
-    vkBindImageMemory(m_Device->GetDevice(), image, imageMemory, 0);
+    vkBindImageMemory(m_Device->GetDevice(), image.image, imageMemory, 0);
 }
 
 uint32_t ResourceManager::FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties)
@@ -363,7 +381,7 @@ ResourceManager::~ResourceManager()
 		vkDestroyImageView(m_Device->GetDevice(), texture.imageView, nullptr);
 		vkDestroySampler(m_Device->GetDevice(), texture.sampler, nullptr);
 
-        vkDestroyImage(m_Device->GetDevice(), texture.image, nullptr);
+        vkDestroyImage(m_Device->GetDevice(), texture.image.image, nullptr);
         vkFreeMemory(m_Device->GetDevice(), texture.imageMemory, nullptr);
 	}
 
@@ -384,7 +402,7 @@ ResourceManager::~ResourceManager()
 void ResourceManager::CleanDepth()
 {
     vkDestroyImageView(m_Device->GetDevice(), m_DepthImageView, nullptr);
-    vkDestroyImage(m_Device->GetDevice(), m_DepthImage, nullptr);
+    vkDestroyImage(m_Device->GetDevice(), m_DepthImage.image, nullptr);
     vkFreeMemory(m_Device->GetDevice(), m_DepthImageMemory, nullptr);
 }
 
@@ -473,127 +491,56 @@ VkFormat ResourceManager::FindDepthFormat()
     );
 }
 
-void ResourceManager::TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout)
+void ResourceManager::TransitionImageLayout(Image image, VkImageLayout newLayout, VkPipelineStageFlags2 srcStageMask,
+                                                                                  VkPipelineStageFlags2 srcAccessMask,
+                                                                                  VkPipelineStageFlags2 dstStageMask,
+                                                                                  VkPipelineStageFlags2 dstAccessMask)
 {
     VkCommandBuffer commandBuffer = m_CommandManager->BeginSingleTimeCommands();
 
-    if (m_Device->IsSynchronization2Supported()) {
-        VkImageMemoryBarrier2 barrier{};
-        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-        barrier.pNext = nullptr;
-        barrier.oldLayout = oldLayout;
-        barrier.newLayout = newLayout;
-        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.image = image;
+    VkImageMemoryBarrier2 barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+    barrier.pNext = nullptr;
+    barrier.oldLayout = image.currentLayout;
+    barrier.newLayout = newLayout;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = image.image;
 
-        // For depth images, set the correct aspect mask
-        VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
-            aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-            if (format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT) {
-                aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
-            }
+    // For depth images, set the correct aspect mask
+    VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+        aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        if (image.format == VK_FORMAT_D32_SFLOAT_S8_UINT || image.format == VK_FORMAT_D24_UNORM_S8_UINT) {
+            aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
         }
-
-        barrier.subresourceRange.aspectMask = aspectMask;
-        barrier.subresourceRange.baseMipLevel = 0;
-        barrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
-        barrier.subresourceRange.baseArrayLayer = 0;
-        barrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
-
-        if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
-            barrier.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
-            barrier.srcAccessMask = VK_ACCESS_2_NONE;
-            barrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-            barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-        }
-        else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-            barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-            barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-            barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-            barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
-        }
-        else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
-            barrier.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
-            barrier.srcAccessMask = VK_ACCESS_2_NONE;
-            barrier.dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-            barrier.dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-        }
-        else {
-            throw std::invalid_argument("unsupported layout transition");
-        }
-
-        VkDependencyInfo dependencyInfo{};
-        dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        dependencyInfo.pNext = nullptr;
-        dependencyInfo.dependencyFlags = 0;
-        dependencyInfo.memoryBarrierCount = 0;
-        dependencyInfo.pMemoryBarriers = nullptr;
-        dependencyInfo.bufferMemoryBarrierCount = 0;
-        dependencyInfo.pBufferMemoryBarriers = nullptr;
-        dependencyInfo.imageMemoryBarrierCount = 1;
-        dependencyInfo.pImageMemoryBarriers = &barrier;
-
-        vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
     }
-    else {
-        VkImageMemoryBarrier barrier{};
-        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        barrier.oldLayout = oldLayout;
-        barrier.newLayout = newLayout;
-        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.image = image;
 
-        VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
-            aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-            if (format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT) {
-                aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
-            }
-        }
+    barrier.subresourceRange.aspectMask = aspectMask;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
 
-        barrier.subresourceRange.aspectMask = aspectMask;
-        barrier.subresourceRange.baseMipLevel = 0;
-        barrier.subresourceRange.levelCount = 1;
-        barrier.subresourceRange.baseArrayLayer = 0;
-        barrier.subresourceRange.layerCount = 1;
+    barrier.srcStageMask = srcStageMask;
+    barrier.srcAccessMask = srcAccessMask;
+    barrier.dstStageMask = dstStageMask;
+    barrier.dstAccessMask = dstAccessMask;
 
-        VkPipelineStageFlags sourceStage;
-        VkPipelineStageFlags destinationStage;
+    VkDependencyInfo dependencyInfo{};
+    dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    dependencyInfo.pNext = nullptr;
+    dependencyInfo.dependencyFlags = 0;
+    dependencyInfo.memoryBarrierCount = 0;
+    dependencyInfo.pMemoryBarriers = nullptr;
+    dependencyInfo.bufferMemoryBarrierCount = 0;
+    dependencyInfo.pBufferMemoryBarriers = nullptr;
+    dependencyInfo.imageMemoryBarrierCount = 1;
+    dependencyInfo.pImageMemoryBarriers = &barrier;
 
-        if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
-            barrier.srcAccessMask = 0;
-            barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-            destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-        }
-        else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-            barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-            sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-            destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-        }
-        else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
-            barrier.srcAccessMask = 0;
-            barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-            sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-            destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-        }
-        else {
-            throw std::invalid_argument("unsupported layout transition");
-        }
-
-        vkCmdPipelineBarrier(
-            commandBuffer,
-            sourceStage, destinationStage,
-            0,
-            0, nullptr,
-            0, nullptr,
-            1, &barrier
-        );
-    }
+    vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
 
     m_CommandManager->EndSingleTimeCommands(commandBuffer);
+
+    image.currentLayout = newLayout;
 }

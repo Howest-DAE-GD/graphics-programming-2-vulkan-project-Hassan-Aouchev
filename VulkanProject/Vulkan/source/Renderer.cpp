@@ -106,61 +106,41 @@ void Renderer::DrawFrame()
     UpdateUniformBuffer(m_CurrentFrame);
     RecordCommandBuffer(m_CommandManager->GetCommandBuffers()[m_CurrentFrame], imageIndex);
 
-    if (m_Device->IsSynchronization2Supported()) {
-		VkCommandBufferSubmitInfo cmdBufferSubmitInfo{};
-		cmdBufferSubmitInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
-		cmdBufferSubmitInfo.commandBuffer = m_CommandManager->GetCommandBuffers()[m_CurrentFrame];
-		cmdBufferSubmitInfo.deviceMask = 0;
+	VkCommandBufferSubmitInfo cmdBufferSubmitInfo{};
+	cmdBufferSubmitInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+	cmdBufferSubmitInfo.commandBuffer = m_CommandManager->GetCommandBuffers()[m_CurrentFrame];
+	cmdBufferSubmitInfo.deviceMask = 0;
 
-		VkSemaphoreSubmitInfo waitSemaphoreSubmitInfo{};
-		waitSemaphoreSubmitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-		waitSemaphoreSubmitInfo.semaphore = m_ImageAvailableSemaphores[m_CurrentFrame];
-		waitSemaphoreSubmitInfo.stageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-		waitSemaphoreSubmitInfo.deviceIndex = 0;
-		waitSemaphoreSubmitInfo.value = 0;
+	VkSemaphoreSubmitInfo waitSemaphoreSubmitInfo{};
+	waitSemaphoreSubmitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+	waitSemaphoreSubmitInfo.semaphore = m_ImageAvailableSemaphores[m_CurrentFrame];
+	waitSemaphoreSubmitInfo.stageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	waitSemaphoreSubmitInfo.deviceIndex = 0;
+	waitSemaphoreSubmitInfo.value = 0;
 
-		VkSemaphoreSubmitInfo signalSemaphoreSubmitInfo{};
-		signalSemaphoreSubmitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-		signalSemaphoreSubmitInfo.semaphore = m_RenderFinishedSemaphores[m_CurrentFrame];
-		signalSemaphoreSubmitInfo.stageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-		signalSemaphoreSubmitInfo.deviceIndex = 0;
-		signalSemaphoreSubmitInfo.value = 0;
+	VkSemaphoreSubmitInfo signalSemaphoreSubmitInfo{};
+	signalSemaphoreSubmitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+	signalSemaphoreSubmitInfo.semaphore = m_RenderFinishedSemaphores[m_CurrentFrame];
+	signalSemaphoreSubmitInfo.stageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	signalSemaphoreSubmitInfo.deviceIndex = 0;
+	signalSemaphoreSubmitInfo.value = 0;
 
-		VkSubmitInfo2 submitInfo{};
-		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
-        submitInfo.flags = 0;
-		submitInfo.waitSemaphoreInfoCount = 1;
-		submitInfo.pWaitSemaphoreInfos = &waitSemaphoreSubmitInfo;
-		submitInfo.commandBufferInfoCount = 1;
-		submitInfo.pCommandBufferInfos = &cmdBufferSubmitInfo;
-		submitInfo.signalSemaphoreInfoCount = 1;
-		submitInfo.pSignalSemaphoreInfos = &signalSemaphoreSubmitInfo;
+	VkSubmitInfo2 submitInfo{};
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+    submitInfo.flags = 0;
+	submitInfo.waitSemaphoreInfoCount = 1;
+	submitInfo.pWaitSemaphoreInfos = &waitSemaphoreSubmitInfo;
+	submitInfo.commandBufferInfoCount = 1;
+	submitInfo.pCommandBufferInfos = &cmdBufferSubmitInfo;
+	submitInfo.signalSemaphoreInfoCount = 1;
+	submitInfo.pSignalSemaphoreInfos = &signalSemaphoreSubmitInfo;
 
-        if (vkQueueSubmit2(m_Device->GetGraphicsQueue(), 1, &submitInfo,
-            m_InFlightFences[m_CurrentFrame]) != VK_SUCCESS) {
-            throw std::runtime_error("failed to submit draw command buffer!");
-        }
+    if (vkQueueSubmit2(m_Device->GetGraphicsQueue(), 1, &submitInfo,
+        m_InFlightFences[m_CurrentFrame]) != VK_SUCCESS) {
+        throw std::runtime_error("failed to submit draw command buffer!");
     }
-    else {
-        VkSubmitInfo submitInfo{};
-        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-
-        VkSemaphore waitSemaphores[] = { m_ImageAvailableSemaphores[m_CurrentFrame] };
-        VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
-        submitInfo.waitSemaphoreCount = 1;
-        submitInfo.pWaitSemaphores = waitSemaphores;
-        submitInfo.pWaitDstStageMask = waitStages;
-        submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = &m_CommandManager->GetCommandBuffers()[m_CurrentFrame];
-        VkSemaphore signalSemaphores[] = { m_RenderFinishedSemaphores[m_CurrentFrame] };
-        submitInfo.signalSemaphoreCount = 1;
-        submitInfo.pSignalSemaphores = signalSemaphores;
-
-        if (vkQueueSubmit(m_Device->GetGraphicsQueue(), 1, &submitInfo, m_InFlightFences[m_CurrentFrame]) != VK_SUCCESS)
-        {
-            throw std::runtime_error("failed to submit draw  command buffer!");
-        }
-    }
+    
+    
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 
@@ -218,21 +198,50 @@ void Renderer::RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t image
         throw std::runtime_error("failed to begin recording command buffer!");
     }
 
-    VkRenderPassBeginInfo renderPassInfo{};
-    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassInfo.renderPass = m_PipelineManager->GetRenderPass();
-    renderPassInfo.framebuffer = m_SwapChain->GetSwapChainFramebuffers()[imageIndex];
-    renderPassInfo.renderArea.offset = { 0,0 };
-    renderPassInfo.renderArea.extent = m_SwapChain->GetSwapChainExtent();
+    m_ResourceManager->TransitionImageLayout(m_ResourceManager->GetDepthImage(), VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                                             VK_PIPELINE_STAGE_2_NONE,
+                                             VK_ACCESS_2_NONE,
+                                             VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT,
+		                                     VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT
+    );
 
-    std::array<VkClearValue, 2> clearValues{};
-    clearValues[0].color = { {0.0f, 0.0f, 0.0f, 1.0f} };
-    clearValues[1].depthStencil = { 1.0f, 0 };
+    m_ResourceManager->TransitionImageLayout(*m_SwapChain->GetSwapChainImages()[imageIndex], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                             VK_PIPELINE_STAGE_2_NONE,
+                                             VK_ACCESS_2_NONE,        
+                                             VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                                             VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT
+    );
 
-    renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
-    renderPassInfo.pClearValues = clearValues.data();
+    VkRenderingAttachmentInfo colorAttachmentInfo{};
+    colorAttachmentInfo.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    colorAttachmentInfo.imageView = m_SwapChain->GetSwapChainImageViews()[imageIndex];
+	colorAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	colorAttachmentInfo.clearValue.color = { {0.0f, 0.0f, 0.0f, 1.0f} };
+	colorAttachmentInfo.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	colorAttachmentInfo.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    
+    VkRenderingAttachmentInfo depthAttahcmentInfo{};
+	depthAttahcmentInfo.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+	depthAttahcmentInfo.imageView = m_ResourceManager->GetDepthImageView();
+	depthAttahcmentInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+	depthAttahcmentInfo.clearValue.depthStencil = { 1.0f, 0 };
+	depthAttahcmentInfo.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	depthAttahcmentInfo.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 
-    vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+    auto renderArea = VkRect2D{ VkOffset2D{},m_SwapChain->GetSwapChainExtent() };
+    VkRenderingInfo renderInfo{};
+    renderInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+    renderInfo.layerCount = 1;
+    renderInfo.colorAttachmentCount = 1;
+    renderInfo.pColorAttachments = &colorAttachmentInfo;
+	renderInfo.pDepthAttachment = &depthAttahcmentInfo;
+    renderInfo.pStencilAttachment = nullptr;
+    renderInfo.renderArea = renderArea;
+
+    //renderPassInfo.
+
+
+    vkCmdBeginRendering(commandBuffer,&renderInfo);  
 
     VkViewport viewPort{};
     viewPort.x = 0.0f;
@@ -284,7 +293,14 @@ void Renderer::RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t image
         vkCmdDrawIndexed(commandBuffer, mesh.indexCount, 1, mesh.indexOffset, 0, 0);
 
     }
-    vkCmdEndRenderPass(commandBuffer);
+    vkCmdEndRendering(commandBuffer);
+
+    m_ResourceManager->TransitionImageLayout(*m_SwapChain->GetSwapChainImages()[imageIndex], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                                             VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                                             VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                                             VK_PIPELINE_STAGE_2_NONE,
+                                             VK_ACCESS_2_NONE
+    );
 
     if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
         throw std::runtime_error("failed to record command buffer!");

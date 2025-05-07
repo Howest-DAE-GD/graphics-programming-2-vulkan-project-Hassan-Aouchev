@@ -64,8 +64,19 @@ void SwapChain::CreateSwapChain()
     }
 
     vkGetSwapchainImagesKHR(m_Device->GetDevice(), m_SwapChain, &imageCount, nullptr);
+
+	std::vector<VkImage> tempSwapChainImages(imageCount);
     m_SwapChainImages.resize(imageCount);
-    vkGetSwapchainImagesKHR(m_Device->GetDevice(), m_SwapChain, &imageCount, m_SwapChainImages.data());
+
+    vkGetSwapchainImagesKHR(m_Device->GetDevice(), m_SwapChain, &imageCount, tempSwapChainImages.data());
+	
+    for (int i = 0; i < imageCount; i++)
+    {
+        m_SwapChainImages[i] = new Image();
+        m_SwapChainImages[i]->image = tempSwapChainImages[i];
+        m_SwapChainImages[i]->currentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        m_SwapChainImages[i]->format = surfaceFormat.format;
+    }
 
     m_SwapChainImageFormat = surfaceFormat.format;
     m_SwapChainExtent = extent;
@@ -76,7 +87,7 @@ void SwapChain::CreateImageViews()
     m_SwapChainImageViews.resize(m_SwapChainImages.size());
 
     for (size_t i = 0; i < m_SwapChainImages.size(); i++) {
-        m_SwapChainImageViews[i] = m_ResourceManager->CreateImageView(m_SwapChainImages[i], m_SwapChainImageFormat, VK_IMAGE_ASPECT_COLOR_BIT);
+        m_SwapChainImageViews[i] = m_ResourceManager->CreateImageView(m_SwapChainImages[i]->image, m_SwapChainImageFormat, VK_IMAGE_ASPECT_COLOR_BIT);
     }
 }
 

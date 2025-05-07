@@ -144,6 +144,7 @@ void Device::CreateLogicalDevice()
     vulkan13Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
     vulkan13Features.pNext = nullptr;
     vulkan13Features.synchronization2 = VK_TRUE;
+    vulkan13Features.dynamicRendering = VK_TRUE;
 
     VkPhysicalDeviceVulkan12Features vulkan12Features{};
     vulkan12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
