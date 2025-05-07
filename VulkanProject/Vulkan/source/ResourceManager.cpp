@@ -170,17 +170,14 @@ void ResourceManager::CreateUniformBuffers()
     }
 }
 
-void ResourceManager::CreateDescriptorPools()
-{
-    VkDescriptorPoolSize poolSize{};
-    poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSize.descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
-
-    std::array<VkDescriptorPoolSize, 2> poolSizes{};
+void ResourceManager::CreateDescriptorPools() {
+    std::array<VkDescriptorPoolSize, 3> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     poolSizes[1].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT * GetTextureAmount());
+    poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    poolSizes[2].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -193,8 +190,7 @@ void ResourceManager::CreateDescriptorPools()
     }
 }
 
-void ResourceManager::CreateDescriptorSets(PipelineManager* pipelineManager)
-{
+void ResourceManager::CreateDescriptorSets(PipelineManager* pipelineManager) {
     std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, pipelineManager->GetDescriptorSetLayout());
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -207,24 +203,29 @@ void ResourceManager::CreateDescriptorSets(PipelineManager* pipelineManager)
         throw std::runtime_error("failed to allocate descriptor sets!");
     }
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        // Uniform buffer descriptor
         VkDescriptorBufferInfo bufferInfo{};
         bufferInfo.buffer = m_UniformBuffers[i];
         bufferInfo.offset = 0;
         bufferInfo.range = sizeof(UniformBufferObject);
 
+        // Texture image descriptors
         std::vector<VkDescriptorImageInfo> imageInfos;
-
-        for (const auto& tex : m_Textures)
-        {
+        for (const auto& tex : m_Textures) {
             VkDescriptorImageInfo imageInfo{};
             imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             imageInfo.imageView = tex.imageView;
             imageInfo.sampler = tex.sampler;
-			imageInfos.push_back(imageInfo);
+            imageInfos.push_back(imageInfo);
         }
 
+        // Vertex buffer as storage buffer descriptor
+        VkDescriptorBufferInfo vertexBufferInfo{};
+        vertexBufferInfo.buffer = m_VertexBuffer;
+        vertexBufferInfo.offset = 0;
+        vertexBufferInfo.range = VK_WHOLE_SIZE;
 
-        std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
+        std::array<VkWriteDescriptorSet, 3> descriptorWrites{};
 
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorWrites[0].dstSet = m_DescriptorSets[i];
@@ -241,6 +242,14 @@ void ResourceManager::CreateDescriptorSets(PipelineManager* pipelineManager)
         descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         descriptorWrites[1].descriptorCount = m_Textures.size();
         descriptorWrites[1].pImageInfo = imageInfos.data();
+
+        descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[2].dstSet = m_DescriptorSets[i];
+        descriptorWrites[2].dstBinding = 2;
+        descriptorWrites[2].dstArrayElement = 0;
+        descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        descriptorWrites[2].descriptorCount = 1;
+        descriptorWrites[2].pBufferInfo = &vertexBufferInfo;
 
         vkUpdateDescriptorSets(m_Device->GetDevice(), static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
@@ -437,7 +446,7 @@ void ResourceManager::Create(SwapChain* swapChain, PipelineManager* pipelineMana
 
 	// scene class should have loaded the vertex and index data
 
-	CreateVertexBuffer();
+    CreateVertexPullingBuffer();
 	CreateIndexBuffer();
 	CreateUniformBuffers();
 	CreateDescriptorPools();
@@ -491,7 +500,7 @@ VkFormat ResourceManager::FindDepthFormat()
     );
 }
 
-void ResourceManager::TransitionImageLayout(Image image, VkImageLayout newLayout, VkPipelineStageFlags2 srcStageMask,
+void ResourceManager::TransitionImageLayout(Image& image, VkImageLayout newLayout, VkPipelineStageFlags2 srcStageMask,
                                                                                   VkPipelineStageFlags2 srcAccessMask,
                                                                                   VkPipelineStageFlags2 dstStageMask,
                                                                                   VkPipelineStageFlags2 dstAccessMask)
@@ -543,4 +552,31 @@ void ResourceManager::TransitionImageLayout(Image image, VkImageLayout newLayout
     m_CommandManager->EndSingleTimeCommands(commandBuffer);
 
     image.currentLayout = newLayout;
+}
+void ResourceManager::CreateVertexPullingBuffer() {
+    VkDeviceSize bufferSize = sizeof(Vertex) * m_Vertices.size();
+
+    VkBuffer stagingBuffer;
+    VkDeviceMemory stagingBufferMemory;
+    CreateBuffer(bufferSize,
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        stagingBuffer,
+        stagingBufferMemory);
+
+    void* data;
+    vkMapMemory(m_Device->GetDevice(), stagingBufferMemory, 0, bufferSize, 0, &data);
+    memcpy(data, m_Vertices.data(), bufferSize);
+    vkUnmapMemory(m_Device->GetDevice(), stagingBufferMemory);
+
+    CreateBuffer(bufferSize,
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        m_VertexBuffer,
+        m_VertexBufferMemory);
+
+    CopyBuffer(stagingBuffer, m_VertexBuffer, bufferSize);
+
+    vkDestroyBuffer(m_Device->GetDevice(), stagingBuffer, nullptr);
+    vkFreeMemory(m_Device->GetDevice(), stagingBufferMemory, nullptr);
 }

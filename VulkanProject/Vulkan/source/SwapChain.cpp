@@ -16,6 +16,14 @@ SwapChain::SwapChain(Device* device, Instance* instance, ResourceManager* resour
 	CreateImageViews();
 }
 
+SwapChain::~SwapChain()
+{
+    for (auto image : m_SwapChainImages) {
+        delete image;
+    }
+    m_SwapChainImages.clear();
+}
+
 void SwapChain::CreateSwapChain()
 {
     SwapChainSupportDetails swapChainSupport = m_Device->QuerySwapChainSupport(m_Device->GetPhysicalDevice());
@@ -65,8 +73,10 @@ void SwapChain::CreateSwapChain()
 
     vkGetSwapchainImagesKHR(m_Device->GetDevice(), m_SwapChain, &imageCount, nullptr);
 
-	std::vector<VkImage> tempSwapChainImages(imageCount);
+    m_SwapChainImages.clear();
     m_SwapChainImages.resize(imageCount);
+
+	std::vector<VkImage> tempSwapChainImages(imageCount);
 
     vkGetSwapchainImagesKHR(m_Device->GetDevice(), m_SwapChain, &imageCount, tempSwapChainImages.data());
 	
@@ -132,6 +142,7 @@ void SwapChain::CleanupSwapchain()
 
     m_SwapChainFramebuffers.clear();
     m_SwapChain = nullptr;
+
 
 }
 

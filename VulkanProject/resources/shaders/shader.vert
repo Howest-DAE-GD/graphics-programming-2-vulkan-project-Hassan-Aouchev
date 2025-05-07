@@ -1,17 +1,23 @@
 #version 450
 
-layout(location = 0) in vec3 inPosition;
-layout(location = 1) in vec3 inColor;
-layout(location = 2) in vec2 inTexCoord;
-
-layout(location = 0) out vec3 fragColor;
-layout(location = 1) out vec2 fragTexCoord;
-layout(location = 2) out int fragTextureIndex;
-
-layout(binding = 0) uniform UniformBufferObject{
+layout(binding = 0) uniform UniformBufferObject {
     mat4 view;
     mat4 proj;
 } ubo;
+
+struct Vertex {
+    vec3 pos;
+    vec3 color;
+    vec2 texCoord;
+};
+
+layout(std430, binding = 2) readonly buffer VertexBuffer {
+    Vertex vertices[];
+} vertexBuffer;
+
+layout(location = 0) out vec3 fragColor;
+layout(location = 1) out vec2 fragTexCoord;
+layout(location = 2) flat out int fragTextureIndex;
 
 layout(push_constant) uniform PushConstantData {
     mat4 model;
@@ -19,8 +25,10 @@ layout(push_constant) uniform PushConstantData {
 } push;
 
 void main() {
-    gl_Position = ubo.proj * ubo.view * push.model * vec4(inPosition, 1.0);
-    fragColor = inColor;
-    fragTexCoord = inTexCoord;
+    Vertex vertex = vertexBuffer.vertices[gl_VertexIndex];
+    
+    gl_Position = ubo.proj * ubo.view * push.model * vec4(vertex.pos, 1.0);
+    fragColor = vertex.color;
+    fragTexCoord = vertex.texCoord;
     fragTextureIndex = push.textureIndex;
 }

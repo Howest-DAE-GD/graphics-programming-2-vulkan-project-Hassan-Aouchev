@@ -13,6 +13,8 @@ class SwapChain
 public:
 	SwapChain(Device* device, Instance* instance,ResourceManager* resourceManager);
 
+	~SwapChain();
+
 	VkSwapchainKHR GetSwapChain() const { return m_SwapChain; }
 	VkFormat GetSwapChainImageFormat() const { return m_SwapChainImageFormat; }
 	VkExtent2D GetSwapChainExtent() const { return m_SwapChainExtent; }

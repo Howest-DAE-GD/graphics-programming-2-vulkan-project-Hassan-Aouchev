@@ -259,21 +259,15 @@ void Renderer::RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t image
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_PipelineManager->GetGraphicsPipeline());
 
+    vkCmdBindIndexBuffer(commandBuffer, m_ResourceManager->GetIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
+
     const auto& meshes = m_ResourceManager->GetMeshes(); // Get all meshes
     const auto& pushConstants = m_ResourceManager->GetPushConstants(); // Get all push constants
-
-    // Bind vertex and index buffers once if they're shared
-    VkBuffer vertexBuffers[] = { m_ResourceManager->GetVertexBuffer() };
-    VkDeviceSize offsets[] = { 0 };
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
-    vkCmdBindIndexBuffer(commandBuffer, m_ResourceManager->GetIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
 
     for (size_t i = 0; i < meshes.size(); ++i) {
         const auto& mesh = meshes[i];
 
-        // Make sure you have a push constant for each mesh
         if (i < pushConstants.size()) {
-            // Update push constants for this specific mesh
             vkCmdPushConstants(
                 commandBuffer,
                 m_PipelineManager->GetPipelineLayout(),
@@ -284,12 +278,10 @@ void Renderer::RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t image
             );
         }
 
-        // Bind descriptor set (if needed per mesh)
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
             m_PipelineManager->GetPipelineLayout(), 0, 1,
             &m_ResourceManager->GetDescriptorSets()[m_CurrentFrame], 0, nullptr);
 
-        // Draw the current mesh
         vkCmdDrawIndexed(commandBuffer, mesh.indexCount, 1, mesh.indexOffset, 0, 0);
 
     }

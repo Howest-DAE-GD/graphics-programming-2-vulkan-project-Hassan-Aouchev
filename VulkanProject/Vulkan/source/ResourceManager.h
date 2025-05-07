@@ -11,9 +11,9 @@
 #include <iostream>
 
 struct Vertex {
-    glm::vec3 pos;
-    glm::vec3 color;
-    glm::vec2 texCoord;
+    alignas(16) glm::vec3 pos;
+    alignas(16) glm::vec3 color;
+    alignas(8) glm::vec2 texCoord;
 
     static VkVertexInputBindingDescription GetBindingDescription() {
         VkVertexInputBindingDescription bindingDescription{};
@@ -188,13 +188,14 @@ public:
 	std::vector<Vertex>& GetVertices() { return m_Vertices; }
 	std::vector<uint32_t>& GetIndices() { return m_Indices; }
 	VkImageView GetDepthImageView() const { return m_DepthImageView; }
-    Image GetDepthImage() const { return m_DepthImage; }
+    Image& GetDepthImage() { return m_DepthImage; }
     VkImageView CreateImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags);
     void CreateDepthResources(SwapChain* swapChain);
     VkFormat FindSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
     VkFormat FindDepthFormat();
-    void TransitionImageLayout(Image image, VkImageLayout newLayout, VkPipelineStageFlags2 srcStageMask,
+    void TransitionImageLayout(Image& image, VkImageLayout newLayout, VkPipelineStageFlags2 srcStageMask,
                                                                      VkPipelineStageFlags2 srcAccessMask,
                                                                      VkPipelineStageFlags2 dstStageMask,
                                                                      VkPipelineStageFlags2 dstAccessMask);
+    void CreateVertexPullingBuffer();
 };
