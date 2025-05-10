@@ -174,17 +174,18 @@ void ResourceManager::CreateDescriptorPools() {
     std::array<VkDescriptorPoolSize, 3> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
-    poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[1].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT * GetTextureAmount());
-    poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSizes[2].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
-
+    poolSizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    poolSizes[1].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    poolSizes[2].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSizes[2].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT + 5000);
+    
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
     poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
     poolInfo.pPoolSizes = poolSizes.data();
     poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
-
+    
     if (vkCreateDescriptorPool(m_Device->GetDevice(), &poolInfo, nullptr, &m_DescriptorPool) != VK_SUCCESS) {
         throw std::runtime_error("failed to create descriptor pool!");
     }
@@ -192,15 +193,28 @@ void ResourceManager::CreateDescriptorPools() {
 
 void ResourceManager::CreateDescriptorSets(PipelineManager* pipelineManager) {
     std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, pipelineManager->GetDescriptorSetLayout());
+
+    uint32_t variableDescriptorCount = static_cast<uint32_t>(m_Textures.size());
+
+    VkDescriptorSetVariableDescriptorCountAllocateInfo variableCountInfo{};
+    variableCountInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO;
+    variableCountInfo.descriptorSetCount = 1;
+    variableCountInfo.pDescriptorCounts = &variableDescriptorCount;
+
     VkDescriptorSetAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = m_DescriptorPool;
-    allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
-    allocInfo.pSetLayouts = layouts.data();
 
     m_DescriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
-    if (vkAllocateDescriptorSets(m_Device->GetDevice(), &allocInfo, m_DescriptorSets.data()) != VK_SUCCESS) {
-        throw std::runtime_error("failed to allocate descriptor sets!");
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        VkDescriptorSetAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocInfo.pNext = &variableCountInfo;
+        allocInfo.descriptorPool = m_DescriptorPool;
+        allocInfo.descriptorSetCount = 1;
+        allocInfo.pSetLayouts = &layouts[i];
+
+        if (vkAllocateDescriptorSets(m_Device->GetDevice(), &allocInfo, &m_DescriptorSets[i]) != VK_SUCCESS) {
+            throw std::runtime_error("failed to allocate descriptor sets!");
+        }
     }
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         // Uniform buffer descriptor
@@ -208,6 +222,12 @@ void ResourceManager::CreateDescriptorSets(PipelineManager* pipelineManager) {
         bufferInfo.buffer = m_UniformBuffers[i];
         bufferInfo.offset = 0;
         bufferInfo.range = sizeof(UniformBufferObject);
+
+        // Vertex buffer as storage buffer descriptor
+        VkDescriptorBufferInfo vertexBufferInfo{};
+        vertexBufferInfo.buffer = m_VertexBuffer;
+        vertexBufferInfo.offset = 0;
+        vertexBufferInfo.range = VK_WHOLE_SIZE;
 
         // Texture image descriptors
         std::vector<VkDescriptorImageInfo> imageInfos;
@@ -219,11 +239,6 @@ void ResourceManager::CreateDescriptorSets(PipelineManager* pipelineManager) {
             imageInfos.push_back(imageInfo);
         }
 
-        // Vertex buffer as storage buffer descriptor
-        VkDescriptorBufferInfo vertexBufferInfo{};
-        vertexBufferInfo.buffer = m_VertexBuffer;
-        vertexBufferInfo.offset = 0;
-        vertexBufferInfo.range = VK_WHOLE_SIZE;
 
         std::array<VkWriteDescriptorSet, 3> descriptorWrites{};
 
@@ -237,22 +252,37 @@ void ResourceManager::CreateDescriptorSets(PipelineManager* pipelineManager) {
 
         descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorWrites[1].dstSet = m_DescriptorSets[i];
-        descriptorWrites[1].dstBinding = 1;
+        descriptorWrites[1].dstBinding = 1;  // Now binding 1
         descriptorWrites[1].dstArrayElement = 0;
-        descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[1].descriptorCount = m_Textures.size();
-        descriptorWrites[1].pImageInfo = imageInfos.data();
+        descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        descriptorWrites[1].descriptorCount = 1;
+        descriptorWrites[1].pBufferInfo = &vertexBufferInfo;
 
         descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorWrites[2].dstSet = m_DescriptorSets[i];
-        descriptorWrites[2].dstBinding = 2;
+        descriptorWrites[2].dstBinding = 2;  // Now binding 2
         descriptorWrites[2].dstArrayElement = 0;
-        descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        descriptorWrites[2].descriptorCount = 1;
-        descriptorWrites[2].pBufferInfo = &vertexBufferInfo;
+        descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[2].descriptorCount = static_cast<uint32_t>(m_Textures.size());
+        descriptorWrites[2].pImageInfo = imageInfos.data();
 
         vkUpdateDescriptorSets(m_Device->GetDevice(), static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
+}
+
+void ResourceManager::CreateGBuffer(VkExtent2D extent)
+{
+    VkExtent2D extent = extent;
+
+    //albedo
+    CreateImage(extent.width,extent.height,
+                VK_FORMAT_R8G8B8A8_UNORM,
+                VK_IMAGE_TILING_OPTIMAL,
+                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                m_GBuffer.albedoImage,m_GBuffer.albedoImageMemory);
+
+    m_GBuffer.albedoImageView = CreateImageView(m_GBuffer.albedo.image,)
 }
 
 void ResourceManager::CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height)

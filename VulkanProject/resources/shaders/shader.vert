@@ -11,7 +11,7 @@ struct Vertex {
     vec2 texCoord;
 };
 
-layout(std430, binding = 2) readonly buffer VertexBuffer {
+layout(std430, binding = 1) readonly buffer VertexBuffer {
     Vertex vertices[];
 } vertexBuffer;
 

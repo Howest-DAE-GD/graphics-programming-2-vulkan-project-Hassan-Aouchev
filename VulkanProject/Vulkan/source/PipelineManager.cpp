@@ -90,38 +90,54 @@ void PipelineManager::CreateRenderPass()
     }
 }
 void PipelineManager::CreateDescriptorSetLayout() {
+
     VkDescriptorSetLayoutBinding uboLayoutBinding{};
     uboLayoutBinding.binding = 0;
     uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     uboLayoutBinding.descriptorCount = 1;
     uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     uboLayoutBinding.pImmutableSamplers = nullptr;
+    m_Bindings.emplace_back(uboLayoutBinding);
+    m_BindingFlags.push_back(0);
 
-    uint32_t textureAmount = m_ResourceManager->GetTextureAmount();
-    VkDescriptorSetLayoutBinding samplerLayoutBinding{};
-    samplerLayoutBinding.binding = 1;
-    samplerLayoutBinding.descriptorCount = textureAmount;
-    samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    samplerLayoutBinding.pImmutableSamplers = nullptr;
-    samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    
 
     VkDescriptorSetLayoutBinding vertexBufferLayoutBinding{};
-    vertexBufferLayoutBinding.binding = 2;
+    vertexBufferLayoutBinding.binding = 1;
     vertexBufferLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     vertexBufferLayoutBinding.descriptorCount = 1;
     vertexBufferLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     vertexBufferLayoutBinding.pImmutableSamplers = nullptr;
+    m_Bindings.emplace_back(vertexBufferLayoutBinding);
+    m_BindingFlags.push_back(0);
 
-    std::array<VkDescriptorSetLayoutBinding, 3> bindings = {
-        uboLayoutBinding,
-        samplerLayoutBinding,
-        vertexBufferLayoutBinding
-    };
+    uint32_t textureAmount = 5000;
+    VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+    samplerLayoutBinding.binding = 2;
+    samplerLayoutBinding.descriptorCount = textureAmount;
+    samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    samplerLayoutBinding.pImmutableSamplers = nullptr;
+    samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    m_Bindings.emplace_back(samplerLayoutBinding);
+
+    VkDescriptorBindingFlags bindlessFlags =
+        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
+        VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT |
+        VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT;
+    m_BindingFlags.push_back(bindlessFlags);
+
+    VkDescriptorSetLayoutBindingFlagsCreateInfo bindingFlagsInfo{};
+    bindingFlagsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
+    bindingFlagsInfo.bindingCount = static_cast<uint32_t>(m_Bindings.size());
+    bindingFlagsInfo.pBindingFlags = m_BindingFlags.data();
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-    layoutInfo.pBindings = bindings.data();
+    layoutInfo.pNext = &bindingFlagsInfo;
+    layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
+    layoutInfo.bindingCount = static_cast<uint32_t>(m_Bindings.size());
+    layoutInfo.pBindings = m_Bindings.data();
+
 
     if (vkCreateDescriptorSetLayout(m_Device->GetDevice(), &layoutInfo, nullptr, &m_DescriptorSetLayout) != VK_SUCCESS) {
         throw std::runtime_error("failed to create descriptor set layout!");

@@ -46,6 +46,9 @@ private:
 	VkPipeline m_GraphicsPipeline;
 	VkDescriptorSetLayout m_DescriptorSetLayout;
 
+	std::vector<VkDescriptorSetLayoutBinding> m_Bindings{};
+	std::vector<VkDescriptorBindingFlags> m_BindingFlags{};
+
 	ResourceManager* m_ResourceManager;
 	SwapChain* m_SwapChain;
 	Device* m_Device;

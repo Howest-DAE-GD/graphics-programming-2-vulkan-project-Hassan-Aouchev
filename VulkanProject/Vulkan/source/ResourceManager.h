@@ -10,6 +10,27 @@
 #include <string>
 #include <iostream>
 
+struct GBuffer {
+    // G-Buffer images
+    Image albedo;
+    Image normal;
+    Image depth;
+    // i can add more if needed
+
+    // Image views
+    VkImageView albedoImageView;
+    VkImageView normalImageView;
+    VkImageView depthImageView;
+
+    // Memory allocations
+    VkDeviceMemory albedoImageMemory;
+    VkDeviceMemory normalImageMemory;
+    VkDeviceMemory depthImageMemory;
+
+    // Sampler (can be shared)
+    VkSampler sampler;
+};
+
 struct Vertex {
     alignas(16) glm::vec3 pos;
     alignas(16) glm::vec3 color;
@@ -101,6 +122,8 @@ private:
     void CreateDescriptorPools();
     void CreateDescriptorSets(PipelineManager* pipelineManager);
 
+    void CreateGBuffer(VkExtent2D extent);
+
     void CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
     void CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
     void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);
@@ -142,6 +165,8 @@ private:
     std::vector<MeshHandle> m_Meshes;
     std::vector<Vertex> m_Vertices;
     std::vector<uint32_t> m_Indices;
+
+    GBuffer m_GBuffer;
 
     const int MAX_FRAMES_IN_FLIGHT = 2;
 public:
