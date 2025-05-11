@@ -104,7 +104,9 @@ void Renderer::DrawFrame()
     vkResetCommandBuffer(m_CommandManager->GetCommandBuffers()[m_CurrentFrame], 0);
 
     UpdateUniformBuffer(m_CurrentFrame);
-    RecordCommandBuffer(m_CommandManager->GetCommandBuffers()[m_CurrentFrame], imageIndex);
+
+    //RecordCommandBuffer(m_CommandManager->GetCommandBuffers()[m_CurrentFrame], imageIndex);
+    RecordDeferredCommandBuffer(m_CommandManager->GetCommandBuffers()[m_CurrentFrame], imageIndex);
 
 	VkCommandBufferSubmitInfo cmdBufferSubmitInfo{};
 	cmdBufferSubmitInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
@@ -316,5 +318,260 @@ void Renderer::RecreateSwapChain()
     m_SwapChain->CreateSwapChain();
     m_SwapChain->CreateImageViews();
     m_ResourceManager->CreateDepthResources(m_SwapChain);
-    m_SwapChain->CreateFrameBuffers(m_PipelineManager,m_ResourceManager);
+}
+
+void Renderer::RenderDepthPrepass(VkCommandBuffer commandBuffer)
+{
+    m_ResourceManager->TransitionImageLayout(m_ResourceManager->GetDepthImage(),
+        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        VK_PIPELINE_STAGE_2_NONE,
+        VK_ACCESS_2_NONE,
+        VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT,
+        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT
+    );
+
+    // Depth-only attachment
+    VkRenderingAttachmentInfo depthAttachment{};
+    depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    depthAttachment.imageView = m_ResourceManager->GetDepthImageView();
+    depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    depthAttachment.clearValue.depthStencil = { 1.0f, 0 };
+    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+
+    VkRenderingInfo renderInfo{};
+    renderInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+    renderInfo.renderArea = { {0, 0}, m_SwapChain->GetSwapChainExtent() };
+    renderInfo.layerCount = 1;
+    renderInfo.pDepthAttachment = &depthAttachment;
+
+    vkCmdBeginRendering(commandBuffer, &renderInfo);
+
+    // Set viewport and scissor
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<float>(m_SwapChain->GetSwapChainExtent().width);
+    viewport.height = static_cast<float>(m_SwapChain->GetSwapChainExtent().height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = { 0, 0 };
+    scissor.extent = m_SwapChain->GetSwapChainExtent();
+    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+    // Bind depth prepass pipeline
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        m_PipelineManager->GetDepthPrepassPipeline());
+
+    // Draw all objects
+    vkCmdBindIndexBuffer(commandBuffer, m_ResourceManager->GetIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
+
+    const auto& meshes = m_ResourceManager->GetMeshes();
+    const auto& pushConstants = m_ResourceManager->GetPushConstants();
+
+    for (size_t i = 0; i < meshes.size(); ++i) {
+        const auto& mesh = meshes[i];
+
+        if (i < pushConstants.size()) {
+            vkCmdPushConstants(
+                commandBuffer,
+                m_PipelineManager->GetDepthPrepassPipelineLayout(),
+                VK_SHADER_STAGE_VERTEX_BIT,
+                0,
+                sizeof(PushConstantData),
+                &pushConstants[i]
+            );
+        }
+
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            m_PipelineManager->GetDepthPrepassPipelineLayout(), 0, 1,
+            &m_ResourceManager->GetDescriptorSets()[m_CurrentFrame], 0, nullptr);
+
+        vkCmdDrawIndexed(commandBuffer, mesh.indexCount, 1, mesh.indexOffset, 0, 0);
+    }
+
+    vkCmdEndRendering(commandBuffer);
+}
+
+void Renderer::RenderGBufferPass(VkCommandBuffer commandBuffer)
+{
+    m_ResourceManager->TransitionImageLayoutInline(
+        commandBuffer,
+        m_ResourceManager->GetGBuffer().albedo,
+        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
+        VK_ACCESS_2_NONE,
+        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT
+    );
+
+    m_ResourceManager->TransitionImageLayoutInline(
+        commandBuffer,
+        m_ResourceManager->GetGBuffer().normal,
+        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
+        VK_ACCESS_2_NONE,
+        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT
+    );
+
+    VkRenderingAttachmentInfo colorAttachments[2] = {};
+
+    colorAttachments[0].sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    colorAttachments[0].imageView = m_ResourceManager->GetGBuffer().albedoImageView;
+    colorAttachments[0].imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachments[0].clearValue.color = { {0.0f, 0.0f, 0.0f, 1.0f} };
+    colorAttachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+
+    colorAttachments[1] = colorAttachments[0];
+    colorAttachments[1].imageView = m_ResourceManager->GetGBuffer().normalImageView;
+
+    VkRenderingAttachmentInfo depthAttachment{};
+    depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    depthAttachment.imageView = m_ResourceManager->GetDepthImageView();
+    depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+
+    VkRenderingInfo renderInfo{};
+    renderInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+    renderInfo.renderArea = { {0,0},m_SwapChain->GetSwapChainExtent() };
+    renderInfo.layerCount = 1;
+    renderInfo.colorAttachmentCount = 2;
+    renderInfo.pColorAttachments = colorAttachments;
+    renderInfo.pDepthAttachment = &depthAttachment;
+
+    vkCmdBeginRendering(commandBuffer, &renderInfo);
+
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<float>(m_SwapChain->GetSwapChainExtent().width);
+    viewport.height = static_cast<float>(m_SwapChain->GetSwapChainExtent().height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = { 0, 0 };
+    scissor.extent = m_SwapChain->GetSwapChainExtent();
+    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        m_PipelineManager->GetGBufferPipeline());
+
+    vkCmdBindIndexBuffer(commandBuffer, m_ResourceManager->GetIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
+
+    const auto& meshes = m_ResourceManager->GetMeshes();
+    const auto& pushConstants = m_ResourceManager->GetPushConstants();
+
+    for (size_t i = 0; i < meshes.size(); ++i) {
+        const auto& mesh = meshes[i];
+
+        if (i < pushConstants.size()) {
+            vkCmdPushConstants(
+                commandBuffer,
+                m_PipelineManager->GetGBufferPipelineLayout(),
+                VK_SHADER_STAGE_VERTEX_BIT,
+                0,
+                sizeof(PushConstantData),
+                &pushConstants[i]
+            );
+        }
+
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            m_PipelineManager->GetGBufferPipelineLayout(), 0, 1,
+            &m_ResourceManager->GetDescriptorSets()[m_CurrentFrame], 0, nullptr);
+
+        vkCmdDrawIndexed(commandBuffer, mesh.indexCount, 1, mesh.indexOffset, 0, 0);
+    }
+
+    vkCmdEndRendering(commandBuffer);
+
+    m_ResourceManager->TransitionImageLayoutInline(
+        commandBuffer,
+        m_ResourceManager->GetGBuffer().albedo,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+        VK_ACCESS_2_SHADER_READ_BIT
+    );
+
+    m_ResourceManager->TransitionImageLayoutInline(
+        commandBuffer,
+        m_ResourceManager->GetGBuffer().normal,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+        VK_ACCESS_2_SHADER_READ_BIT
+    );
+}
+
+void Renderer::RecordDeferredCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex)
+{
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = 0;
+    beginInfo.pInheritanceInfo = nullptr;
+
+    if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
+        throw std::runtime_error("failed to begin recording command buffer!");
+    }
+
+    m_ResourceManager->TransitionImageLayoutInline(commandBuffer, m_ResourceManager->GetDepthImage(),
+        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
+        VK_ACCESS_2_NONE,
+        VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT,
+        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT
+    );
+
+    RenderDepthPrepass(commandBuffer);
+
+    RenderGBufferPass(commandBuffer);
+
+    m_ResourceManager->TransitionImageLayoutInline(commandBuffer, *m_SwapChain->GetSwapChainImages()[imageIndex],
+        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
+        VK_ACCESS_2_NONE,
+        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT
+    );
+
+    VkRenderingAttachmentInfo colorAttachmentInfo{};
+    colorAttachmentInfo.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    colorAttachmentInfo.imageView = m_SwapChain->GetSwapChainImageViews()[imageIndex];
+    colorAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachmentInfo.clearValue.color = { {0.0f, 0.0f, 0.0f, 1.0f} };
+    colorAttachmentInfo.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachmentInfo.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+
+    VkRenderingInfo renderInfo{};
+    renderInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+    renderInfo.renderArea = { {0, 0}, m_SwapChain->GetSwapChainExtent() };
+    renderInfo.layerCount = 1;
+    renderInfo.colorAttachmentCount = 1;
+    renderInfo.pColorAttachments = &colorAttachmentInfo;
+
+    vkCmdBeginRendering(commandBuffer, &renderInfo);
+    vkCmdEndRendering(commandBuffer);
+
+    // Transition swapchain image for presentation
+    m_ResourceManager->TransitionImageLayoutInline(commandBuffer, *m_SwapChain->GetSwapChainImages()[imageIndex],
+        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
+        VK_ACCESS_2_NONE
+    );
+
+    if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
+        throw std::runtime_error("failed to record command buffer!");
+    }
 }

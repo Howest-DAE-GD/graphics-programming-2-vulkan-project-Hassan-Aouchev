@@ -10,27 +10,6 @@
 #include <string>
 #include <iostream>
 
-struct GBuffer {
-    // G-Buffer images
-    Image albedo;
-    Image normal;
-    Image depth;
-    // i can add more if needed
-
-    // Image views
-    VkImageView albedoImageView;
-    VkImageView normalImageView;
-    VkImageView depthImageView;
-
-    // Memory allocations
-    VkDeviceMemory albedoImageMemory;
-    VkDeviceMemory normalImageMemory;
-    VkDeviceMemory depthImageMemory;
-
-    // Sampler (can be shared)
-    VkSampler sampler;
-};
-
 struct Vertex {
     alignas(16) glm::vec3 pos;
     alignas(16) glm::vec3 color;
@@ -103,6 +82,26 @@ struct Image {
 	VkImageLayout currentLayout;
 	VkFormat format;
 };
+struct GBuffer {
+    // G-Buffer images
+    Image albedo;
+    Image normal;
+    Image depth;
+    // i can add more if needed
+
+    // Image views
+    VkImageView albedoImageView;
+    VkImageView normalImageView;
+    VkImageView depthImageView;
+
+    // Memory allocations
+    VkDeviceMemory albedoImageMemory;
+    VkDeviceMemory normalImageMemory;
+    VkDeviceMemory depthImageMemory;
+
+    // Sampler (can be shared)
+    VkSampler sampler;
+};
 
 class Device;
 class SwapChain;
@@ -129,6 +128,8 @@ private:
     void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);
     void CreateImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, Image& image, VkDeviceMemory& imageMemory);
     uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+
+    void CleanupGBuffer();
 
 
     struct Texture {
@@ -176,6 +177,8 @@ public:
 
     void CleanDepth();
 
+    GBuffer& GetGBuffer() { return m_GBuffer; }
+
     void AddModel(MeshHandle meshHandle) { 
 		MeshHandle newMeshHandle = meshHandle;
         m_Meshes.push_back(meshHandle);
@@ -222,5 +225,10 @@ public:
                                                                      VkPipelineStageFlags2 srcAccessMask,
                                                                      VkPipelineStageFlags2 dstStageMask,
                                                                      VkPipelineStageFlags2 dstAccessMask);
+    void TransitionImageLayoutInline(VkCommandBuffer commandBuffer, Image& image, VkImageLayout newLayout,
+                                     VkPipelineStageFlags2 srcStageMask,
+                                     VkPipelineStageFlags2 srcAccessMask,
+                                     VkPipelineStageFlags2 dstStageMask,
+                                     VkPipelineStageFlags2 dstAccessMask);
     void CreateVertexPullingBuffer();
 };

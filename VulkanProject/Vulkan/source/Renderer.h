@@ -19,6 +19,10 @@ public:
 	void DrawFrame();
 	void CreateSyncObjects();
 	void RecreateSwapChain();
+
+	void RenderDepthPrepass(VkCommandBuffer commandBuffer);
+	void RenderGBufferPass(VkCommandBuffer commandBuffer);
+	void RecordDeferredCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 private:
 
 	static void framebufferResizeCallback(GLFWwindow* window, int width, int height) {

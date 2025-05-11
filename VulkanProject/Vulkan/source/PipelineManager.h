@@ -26,25 +26,34 @@ public:
 	~PipelineManager();
 
 	VkDescriptorSetLayout GetDescriptorSetLayout() const { return m_DescriptorSetLayout; }
-	VkRenderPass GetRenderPass() const { return m_RenderPass; }
-	VkPipeline GetGraphicsPipeline() const { return m_GraphicsPipeline; }
-	VkPipelineLayout GetPipelineLayout() const { return m_PipelineLayout; }
+	VkPipeline GetGraphicsPipeline() const { return m_ForwardPipeline; }
+	VkPipelineLayout GetPipelineLayout() const { return m_ForwardPipelineLayout; }
+
+	void CreateDepthPrepassPipeline();
+	VkPipeline GetDepthPrepassPipeline() const { return m_DepthPrepassPipeline; }
+	VkPipelineLayout GetDepthPrepassPipelineLayout() const { return m_DepthPrepassPipelineLayout; }
+
+	void CreateGBufferPipeline();
+	VkPipeline GetGBufferPipeline() const { return m_GBufferPipeline; }
+	VkPipelineLayout GetGBufferPipelineLayout() const { return m_GBufferPipelineLayout; }
 
 
 private:
-	void CreateRenderPass();
 	void CreateDescriptorSetLayout();
-	void CreateGraphicsPipeline();
+	void CreateForwardPipeline();
 	void SavePipelineCache();
 
 	VkShaderModule CreateShaderModule(const std::vector<char>& code);
 
-
-	VkRenderPass m_RenderPass;
-	VkPipelineLayout m_PipelineLayout;
+	VkPipeline m_ForwardPipeline;
+	VkPipelineLayout m_ForwardPipelineLayout;
 	VkPipelineCache m_PipelineCache;
-	VkPipeline m_GraphicsPipeline;
 	VkDescriptorSetLayout m_DescriptorSetLayout;
+	VkPipeline m_GBufferPipeline;
+	VkPipelineLayout m_GBufferPipelineLayout;
+
+	VkPipeline m_DepthPrepassPipeline;
+	VkPipelineLayout m_DepthPrepassPipelineLayout;
 
 	std::vector<VkDescriptorSetLayoutBinding> m_Bindings{};
 	std::vector<VkDescriptorBindingFlags> m_BindingFlags{};

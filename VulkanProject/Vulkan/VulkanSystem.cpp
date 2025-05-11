@@ -48,7 +48,6 @@ bool VulkanSystem::Initialize(WindowManager* windowManager) {
         m_ResourceManager->SetCommandManager(m_CommandManager);
         m_CommandManager->CreateCommandPool();
         m_ResourceManager->Create(m_SwapChain, m_PipelineManager);
-        m_SwapChain->CreateFrameBuffers(m_PipelineManager, m_ResourceManager);
         m_CommandManager->CreateCommandBuffers();
         m_Renderer->CreateSyncObjects();
 

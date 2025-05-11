@@ -18,12 +18,10 @@ public:
 	VkSwapchainKHR GetSwapChain() const { return m_SwapChain; }
 	VkFormat GetSwapChainImageFormat() const { return m_SwapChainImageFormat; }
 	VkExtent2D GetSwapChainExtent() const { return m_SwapChainExtent; }
-	std::vector<VkFramebuffer> GetSwapChainFramebuffers() const { return m_SwapChainFramebuffers; }
 
 	void CleanupSwapchain();
 	void CreateSwapChain();
 	void CreateImageViews();
-	void CreateFrameBuffers(PipelineManager* pipelineManager, ResourceManager* resourceManager);
 	std::vector<VkImageView> GetSwapChainImageViews() const { return m_SwapChainImageViews; }
 	std::vector<Image*> GetSwapChainImages() const { return m_SwapChainImages; }
 private:
@@ -36,7 +34,6 @@ private:
 	VkFormat m_SwapChainImageFormat;
 	VkExtent2D m_SwapChainExtent;
 	std::vector<VkImageView> m_SwapChainImageViews;
-	std::vector<VkFramebuffer> m_SwapChainFramebuffers;
 
 	Device* m_Device;
 	ResourceManager* m_ResourceManager;

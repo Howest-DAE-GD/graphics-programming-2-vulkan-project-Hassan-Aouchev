@@ -46,7 +46,7 @@ void SwapChain::CreateSwapChain()
     createInfo.imageColorSpace = surfaceFormat.colorSpace;
     createInfo.imageExtent = extent;
     createInfo.imageArrayLayers = 1;
-    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 
     QueueFamilyIndices indices = m_Device->FindQueueFamilies(m_Device->GetPhysicalDevice());
     uint32_t queueFamilyIndices[] = { indices.graphicsFamily.value(), indices.presentFamily.value() };
@@ -101,46 +101,16 @@ void SwapChain::CreateImageViews()
     }
 }
 
-void SwapChain::CreateFrameBuffers(PipelineManager* pipelineManager,ResourceManager* resourceManager)
-{
-    m_SwapChainFramebuffers.resize(m_SwapChainImageViews.size());
-
-    for (size_t i = 0; i < m_SwapChainImageViews.size(); i++) {
-        std::array<VkImageView, 2> attachments = {
-            m_SwapChainImageViews[i],
-            resourceManager->GetDepthImageView()
-        };
-
-        VkFramebufferCreateInfo framebufferInfo{};
-        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebufferInfo.renderPass = pipelineManager->GetRenderPass();
-        framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-        framebufferInfo.pAttachments = attachments.data();
-        framebufferInfo.width = m_SwapChainExtent.width;
-        framebufferInfo.height = m_SwapChainExtent.height;
-        framebufferInfo.layers = 1;
-
-        if (vkCreateFramebuffer(m_Device->GetDevice(), &framebufferInfo, nullptr, &m_SwapChainFramebuffers[i]) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create framebuffer");
-        }
-    }
-}
-
 
 
 
 void SwapChain::CleanupSwapchain()
 {
-
-    for (size_t i = 0; i < m_SwapChainFramebuffers.size(); i++) {
-        vkDestroyFramebuffer(m_Device->GetDevice(), m_SwapChainFramebuffers[i], nullptr);
-    }
     for (size_t i = 0; i < m_SwapChainImageViews.size(); i++) {
         vkDestroyImageView(m_Device->GetDevice(), m_SwapChainImageViews[i], nullptr);
     }
     vkDestroySwapchainKHR(m_Device->GetDevice(), m_SwapChain, nullptr);
 
-    m_SwapChainFramebuffers.clear();
     m_SwapChain = nullptr;
 
 

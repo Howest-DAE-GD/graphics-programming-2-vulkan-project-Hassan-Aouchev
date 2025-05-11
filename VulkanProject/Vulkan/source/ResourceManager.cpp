@@ -272,17 +272,55 @@ void ResourceManager::CreateDescriptorSets(PipelineManager* pipelineManager) {
 
 void ResourceManager::CreateGBuffer(VkExtent2D extent)
 {
-    VkExtent2D extent = extent;
 
     //albedo
+    m_GBuffer.albedo.format = VK_FORMAT_R8G8B8A8_UNORM;
     CreateImage(extent.width,extent.height,
-                VK_FORMAT_R8G8B8A8_UNORM,
+                m_GBuffer.albedo.format,
                 VK_IMAGE_TILING_OPTIMAL,
                 VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                m_GBuffer.albedoImage,m_GBuffer.albedoImageMemory);
+                m_GBuffer.albedo,m_GBuffer.albedoImageMemory);
 
-    m_GBuffer.albedoImageView = CreateImageView(m_GBuffer.albedo.image,)
+    m_GBuffer.albedoImageView = CreateImageView(m_GBuffer.albedo.image,
+                                                m_GBuffer.albedo.format,
+                                                VK_IMAGE_ASPECT_COLOR_BIT);
+
+    //normal
+	m_GBuffer.normal.format = VK_FORMAT_R16G16B16A16_SFLOAT; // higher precision for normals
+	CreateImage(extent.width, extent.height,
+		        m_GBuffer.normal.format,
+		        VK_IMAGE_TILING_OPTIMAL,
+		        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+		        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+		        m_GBuffer.normal, m_GBuffer.normalImageMemory);
+
+	m_GBuffer.normalImageView = CreateImageView(m_GBuffer.normal.image,
+		                                        m_GBuffer.normal.format,
+		                                        VK_IMAGE_ASPECT_COLOR_BIT);
+    m_GBuffer.normal.currentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+	m_GBuffer.depth = m_DepthImage;
+
+	VkSamplerCreateInfo samplerInfo{};
+	samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+	samplerInfo.magFilter = VK_FILTER_NEAREST;
+	samplerInfo.minFilter = VK_FILTER_NEAREST;
+	samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+	samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+	samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+	samplerInfo.anisotropyEnable = VK_FALSE;
+	samplerInfo.maxAnisotropy = 1.0f;
+	samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+	samplerInfo.unnormalizedCoordinates = VK_FALSE;
+	samplerInfo.compareEnable = VK_FALSE;
+	samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+	samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+
+    if (vkCreateSampler(m_Device->GetDevice(), &samplerInfo, nullptr, &m_GBuffer.sampler) != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to create G-Buffer sampler!");
+    }
 }
 
 void ResourceManager::CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height)
@@ -408,6 +446,21 @@ uint32_t ResourceManager::FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFl
 
 }
 
+void ResourceManager::CleanupGBuffer()
+{
+	vkDestroySampler(m_Device->GetDevice(), m_GBuffer.sampler, nullptr);
+
+    vkDestroyImageView(m_Device->GetDevice(), m_GBuffer.albedoImageView, nullptr);
+	vkDestroyImage(m_Device->GetDevice(), m_GBuffer.albedo.image, nullptr);
+	vkFreeMemory(m_Device->GetDevice(), m_GBuffer.albedoImageMemory, nullptr);
+
+	vkDestroyImageView(m_Device->GetDevice(), m_GBuffer.normalImageView, nullptr);
+	vkDestroyImage(m_Device->GetDevice(), m_GBuffer.normal.image, nullptr);
+	vkFreeMemory(m_Device->GetDevice(), m_GBuffer.normalImageMemory, nullptr);
+
+    //the depth is done somewhere else
+}
+
 ResourceManager::ResourceManager(Device* device)
     : m_Device(device)
 {
@@ -436,6 +489,8 @@ ResourceManager::~ResourceManager()
 
 	vkDestroyBuffer(m_Device->GetDevice(), m_IndexBuffer, nullptr);
 	vkFreeMemory(m_Device->GetDevice(), m_IndexBufferMemory, nullptr);
+
+    CleanupGBuffer();
 }
 
 void ResourceManager::CleanDepth()
@@ -453,6 +508,8 @@ void ResourceManager::SetCommandManager(CommandManager* commandManager)
 void ResourceManager::Create(SwapChain* swapChain, PipelineManager* pipelineManager)
 {
     CreateDepthResources(swapChain);
+
+    CreateGBuffer(swapChain->GetSwapChainExtent());
 
     CreateTextureImage("textures/error.png");
 
@@ -583,6 +640,60 @@ void ResourceManager::TransitionImageLayout(Image& image, VkImageLayout newLayou
 
     image.currentLayout = newLayout;
 }
+void ResourceManager::TransitionImageLayoutInline(VkCommandBuffer commandBuffer, Image& image, VkImageLayout newLayout, VkPipelineStageFlags2 srcStageMask, VkPipelineStageFlags2 srcAccessMask, VkPipelineStageFlags2 dstStageMask, VkPipelineStageFlags2 dstAccessMask)
+{
+    VkImageMemoryBarrier2 barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+    barrier.pNext = nullptr;
+    barrier.oldLayout = image.currentLayout;
+    barrier.newLayout = newLayout;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = image.image;
+
+    VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+
+    if (image.format == VK_FORMAT_D32_SFLOAT ||
+        image.format == VK_FORMAT_D32_SFLOAT_S8_UINT ||
+        image.format == VK_FORMAT_D24_UNORM_S8_UINT ||
+        image.format == VK_FORMAT_D16_UNORM ||
+        image.format == VK_FORMAT_X8_D24_UNORM_PACK32)
+    {
+        aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+
+        if (image.format == VK_FORMAT_D32_SFLOAT_S8_UINT ||
+            image.format == VK_FORMAT_D24_UNORM_S8_UINT)
+        {
+            aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+        }
+    }
+
+    barrier.subresourceRange.aspectMask = aspectMask;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+    barrier.srcStageMask = srcStageMask;
+    barrier.srcAccessMask = srcAccessMask;
+    barrier.dstStageMask = dstStageMask;
+    barrier.dstAccessMask = dstAccessMask;
+
+    VkDependencyInfo dependencyInfo{};
+    dependencyInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    dependencyInfo.pNext = nullptr;
+    dependencyInfo.dependencyFlags = 0;
+    dependencyInfo.memoryBarrierCount = 0;
+    dependencyInfo.pMemoryBarriers = nullptr;
+    dependencyInfo.bufferMemoryBarrierCount = 0;
+    dependencyInfo.pBufferMemoryBarriers = nullptr;
+    dependencyInfo.imageMemoryBarrierCount = 1;
+    dependencyInfo.pImageMemoryBarriers = &barrier;
+
+    vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
+
+    image.currentLayout = newLayout;
+}
+
 void ResourceManager::CreateVertexPullingBuffer() {
     VkDeviceSize bufferSize = sizeof(Vertex) * m_Vertices.size();
 
