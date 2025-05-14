@@ -239,6 +239,8 @@ void ResourceManager::CreateDescriptorSets(PipelineManager* pipelineManager) {
             imageInfos.push_back(imageInfo);
         }
 
+        VkDescriptorBufferInfo materialBufferInfo{};
+        materialBufferInfo.buffer = 
 
         std::array<VkWriteDescriptorSet, 3> descriptorWrites{};
 
@@ -265,6 +267,7 @@ void ResourceManager::CreateDescriptorSets(PipelineManager* pipelineManager) {
         descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         descriptorWrites[2].descriptorCount = static_cast<uint32_t>(m_Textures.size());
         descriptorWrites[2].pImageInfo = imageInfos.data();
+
 
         vkUpdateDescriptorSets(m_Device->GetDevice(), static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }

@@ -105,8 +105,8 @@ void Renderer::DrawFrame()
 
     UpdateUniformBuffer(m_CurrentFrame);
 
-    //RecordCommandBuffer(m_CommandManager->GetCommandBuffers()[m_CurrentFrame], imageIndex);
-    RecordDeferredCommandBuffer(m_CommandManager->GetCommandBuffers()[m_CurrentFrame], imageIndex);
+    RecordCommandBuffer(m_CommandManager->GetCommandBuffers()[m_CurrentFrame], imageIndex);
+    //RecordDeferredCommandBuffer(m_CommandManager->GetCommandBuffers()[m_CurrentFrame], imageIndex);
 
 	VkCommandBufferSubmitInfo cmdBufferSubmitInfo{};
 	cmdBufferSubmitInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;

@@ -10,6 +10,16 @@
 #include <string>
 #include <iostream>
 
+struct alignas(16) GpuMaterial {
+    glm::vec4 baseColor;
+    float roughness;
+    float metallic;
+    uint32_t baseColorTextureIndex;
+    uint32_t normalTextureIndex;
+    uint32_t metallicRoughnessTextureIndex;
+    uint32_t useTextureFlags;
+};
+
 struct Vertex {
     alignas(16) glm::vec3 pos;
     alignas(16) glm::vec3 color;
@@ -141,6 +151,7 @@ private:
 	std::vector<Texture> m_Textures;
 
     VkBuffer m_VertexBuffer;
+    VkBuffer m_MaterialBuffer;
     VkDeviceMemory m_VertexBufferMemory;
     VkBuffer m_IndexBuffer;
     VkDeviceMemory m_IndexBufferMemory;

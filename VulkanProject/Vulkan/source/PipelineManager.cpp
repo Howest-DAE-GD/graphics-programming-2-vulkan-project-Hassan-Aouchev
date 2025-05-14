@@ -13,6 +13,7 @@ m_SwapChain(swapChain)
 {
     CreateDescriptorSetLayout();
     CreateForwardPipeline();
+
     CreateDepthPrepassPipeline();
     CreateGBufferPipeline();
 }

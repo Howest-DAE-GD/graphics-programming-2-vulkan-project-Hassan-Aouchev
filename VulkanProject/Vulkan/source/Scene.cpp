@@ -18,17 +18,18 @@ void Scene::LoadScene(const std::string& scenePath)
         aiProcess_Triangulate |
         aiProcess_GenSmoothNormals |
         aiProcess_FlipUVs |
-        aiProcess_CalcTangentSpace);
+        aiProcess_CalcTangentSpace
+        /* | aiProcess_RemoveRedundantMaterials */ );
 
 
     if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode) {
         throw std::runtime_error("ERROR::ASSIMP::" + std::string(importer.GetErrorString()));
     }
 
-    LoadModel(scenePath, baseDir, scene);
+    LoadObjModel(scenePath, baseDir, scene);
 }
 
-MeshHandle Scene::LoadModel(const std::string& modelPath, const std::filesystem::path& baseDir,const aiScene* scene)
+MeshHandle Scene::LoadObjModel(const std::string& modelPath, const std::filesystem::path& baseDir,const aiScene* scene)
 {
     std::vector<MeshHandle> meshHandles;
 
@@ -38,23 +39,89 @@ MeshHandle Scene::LoadModel(const std::string& modelPath, const std::filesystem:
         MeshHandle meshHandle = LoadMeshData(i,mesh, scene, baseDir);
 
         m_ResourceManager->AddModel(meshHandle);
-        if (i == 16)
-        {
-			std::cout << meshHandle.textureIndex << std::endl;
-			std::cout << meshHandle.indexCount << std::endl;
-        }
+
         meshHandles.push_back(meshHandle);
     }
 
     return meshHandles.empty() ? MeshHandle{} : meshHandles[0];
 }
 
+void Scene::ProcessNode(aiNode* node, const aiScene* scene)
+{
+    for (unsigned int i = 0; i < node->mNumMeshes; i++) {
+        aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
+        
+    }
+}
+
+void Scene::ProcessMesh(aiMesh* mesh, const aiScene* scene)
+{
+    //std::unordered_map<Vertex, uint32_t> uniqueVertices;
+    //
+    //for (unsigned int i = 0; i < mesh->mNumVertices; i++) {
+    //    Vertex vertex;
+    //
+    //    vertex.pos = glm::vec3(
+    //        mesh->mVertices[i].x,
+    //        mesh->mVertices[i].y,
+    //        mesh->mVertices[i].z
+    //    );
+    //    vertex.color = mesh->HasNormals() ? glm::vec3(
+    //        mesh->mNormals[i].x,
+    //        mesh->mNormals[i].y,
+    //        mesh->mNormals[i].z
+    //    ) : glm::vec3(0.f);
+    //
+    //    if (mesh->mTextureCoords[0]) {
+    //        vertex.texCoord = glm::vec2(
+    //            mesh->mTextureCoords[0][i].x,
+    //            mesh->mTextureCoords[0][i].y
+    //        );
+    //    }
+    //    else {
+    //        vertex.texCoord = glm::vec2(0.0f);
+    //    }
+    //
+    //    if (uniqueVertices.count(vertex) == 0) {
+    //        uniqueVertices[vertex] = static_cast<uint32_t>(m_ResourceManager->GetVertices().size());
+    //        m_ResourceManager->GetVertices().push_back(vertex);
+    //    }
+    //}
+}
+
+const aiNode* Scene::FindMeshNode(const aiNode* node, unsigned int meshIndex)
+{
+    for (unsigned int i = 0; i < node->mNumMeshes; ++i) {
+        if (node->mMeshes[i] == meshIndex) return node;
+    }
+    for (unsigned int i = 0; i < node->mNumChildren; ++i) {
+        const aiNode* found = FindMeshNode(node->mChildren[i], meshIndex);
+        if (found) return found;
+    }
+    return nullptr;
+}
+
+glm::mat4 Scene::GetWorldTransform(const aiNode* node)
+{
+    glm::mat4 transform(1.f);
+    while (node)
+    {
+        aiMatrix4x4 m = node->mTransformation;
+        glm::mat4 mat = glm::transpose(glm::make_mat4(&m.a1));
+        transform = mat * transform;
+        node = node->mParent;
+    }
+    return transform;
+}
+
 MeshHandle Scene::LoadMeshData(unsigned int meshIndex, aiMesh* mesh, const aiScene* scene, const std::filesystem::path& baseDir)
 {
     MeshHandle meshHandle{};
     meshHandle.indexOffset = static_cast<uint32_t>(m_ResourceManager->GetIndices().size());
-    const aiNode* meshNode = nullptr;
+    const aiNode* meshNode = FindMeshNode(scene->mRootNode,meshIndex);
 
+    if(meshNode)
+    meshHandle.modelMatrix = GetWorldTransform(meshNode);
 
     // Convert Assimp matrix to glm matrix
     //glm::mat4 modelMatrix = GetNodeWorldTransform(meshNode);
