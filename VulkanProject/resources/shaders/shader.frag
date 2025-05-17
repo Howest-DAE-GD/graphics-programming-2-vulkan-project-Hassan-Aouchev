@@ -10,7 +10,7 @@ layout(constant_id = 0) const int MAX_TEXTURE_COUNT = 64;
 
 layout(location = 0) out vec4 outColor;
 
-layout(set = 0, binding = 2) uniform sampler2D textures[];
+layout(set = 0, binding = 3) uniform sampler2D textures[];
 
 
 void main() {

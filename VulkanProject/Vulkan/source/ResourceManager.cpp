@@ -16,7 +16,7 @@
 void ResourceManager::CreateDepthResources(SwapChain* swapChain)
 {
     VkFormat depthFormat = FindDepthFormat();
-    CreateImage(swapChain->GetSwapChainExtent().width, swapChain->GetSwapChainExtent().height, depthFormat, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_DepthImage, m_DepthImageMemory);
+    CreateImage(swapChain->GetSwapChainExtent().width, swapChain->GetSwapChainExtent().height, depthFormat, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_DepthImage, m_DepthImageMemory);
     m_DepthImageView = CreateImageView(m_DepthImage.image, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
     TransitionImageLayout(m_DepthImage, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
                           VK_PIPELINE_STAGE_2_NONE,
@@ -27,7 +27,7 @@ void ResourceManager::CreateDepthResources(SwapChain* swapChain)
 }
 
 
-void ResourceManager::CreateTextureImage(const std::string& path)
+void ResourceManager::CreateTextureImage(const std::string& path, VkFormat format)
 {
 
     int texWidth, texHeight, texChannels;
@@ -53,7 +53,7 @@ void ResourceManager::CreateTextureImage(const std::string& path)
     vkUnmapMemory(m_Device->GetDevice(), stagingBufferMemory);
     stbi_image_free(pixels);
 
-    CreateImage(texWidth, texHeight, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_Textures[currentTextureIndex].image, m_Textures[currentTextureIndex].imageMemory);
+    CreateImage(texWidth, texHeight, format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_Textures[currentTextureIndex].image, m_Textures[currentTextureIndex].imageMemory);
 
     TransitionImageLayout(m_Textures[currentTextureIndex].image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                           VK_PIPELINE_STAGE_2_NONE,
@@ -70,6 +70,8 @@ void ResourceManager::CreateTextureImage(const std::string& path)
                           VK_ACCESS_2_SHADER_READ_BIT
         );
 
+    m_Textures[currentTextureIndex].image.format = format;
+
     vkDestroyBuffer(m_Device->GetDevice(), stagingBuffer, nullptr);
     vkFreeMemory(m_Device->GetDevice(), stagingBufferMemory, nullptr);
 
@@ -79,7 +81,7 @@ void ResourceManager::CreateTextureImageView()
 {
 	for (auto& texture : m_Textures)
 	{
-		texture.imageView = CreateImageView(texture.image.image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT);
+		texture.imageView = CreateImageView(texture.image.image, texture.image.format, VK_IMAGE_ASPECT_COLOR_BIT);
 	}
 }
 
@@ -130,8 +132,39 @@ void ResourceManager::CreateVertexBuffer()
     memcpy(data, m_Vertices.data(), (size_t)bufferSize);
     vkUnmapMemory(m_Device->GetDevice(), stagingBufferMemory);
 
-    CreateBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_VertexBuffer, m_VertexBufferMemory);
+    CreateBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_VertexBuffer, m_VertexBufferMemory);
     CopyBuffer(stagingBuffer, m_VertexBuffer, bufferSize);
+    vkDestroyBuffer(m_Device->GetDevice(), stagingBuffer, nullptr);
+    vkFreeMemory(m_Device->GetDevice(), stagingBufferMemory, nullptr);
+}
+
+void ResourceManager::CreateMaterialBuffer()
+{
+    VkDeviceSize bufferSize = sizeof(GpuMaterial) * m_Meshes.size();
+
+    VkBuffer stagingBuffer;
+    VkDeviceMemory stagingBufferMemory;
+    CreateBuffer(bufferSize,
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        stagingBuffer,
+        stagingBufferMemory);
+
+    void* data;
+    vkMapMemory(m_Device->GetDevice(), stagingBufferMemory, 0, bufferSize, 0, &data);
+    for (size_t i = 0; i < m_Meshes.size(); ++i) {
+        memcpy(static_cast<char*>(data) + i * sizeof(m_Meshes[0].material), &m_Meshes[i].material, sizeof(m_Meshes[0].material));
+    }
+    vkUnmapMemory(m_Device->GetDevice(), stagingBufferMemory);
+
+    CreateBuffer(bufferSize,
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        m_MaterialBuffer,
+        m_MaterialBufferMemory);
+
+    CopyBuffer(stagingBuffer, m_MaterialBuffer, bufferSize);
+
     vkDestroyBuffer(m_Device->GetDevice(), stagingBuffer, nullptr);
     vkFreeMemory(m_Device->GetDevice(), stagingBufferMemory, nullptr);
 }
@@ -170,21 +203,52 @@ void ResourceManager::CreateUniformBuffers()
     }
 }
 
+void ResourceManager::CreateLightingUniformBuffer()
+{
+    VkDeviceSize bufferSize = sizeof(LightingUBO);
+
+    CreateBuffer(bufferSize,
+                 VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 m_LightingUniformBuffer,
+                 m_LightingUniformBufferMemory);
+    vkMapMemory(m_Device->GetDevice(), m_LightingUniformBufferMemory, 0, bufferSize, 0, &m_LightingUniformBufferMapped);
+
+    LightingUBO lightingData{};
+    lightingData.viewPos = glm::vec3(0.0f, 0.0f, 0.0f);
+    lightingData.lightDir = glm::normalize(glm::vec3(0.577f, -0.577f, -0.577f));
+    lightingData.lightColor = glm::vec3(1.0f, 1.0f, 1.0f);
+    lightingData.ambientStrength = 0.1f;
+
+    memcpy(m_LightingUniformBufferMapped, &lightingData, sizeof(LightingUBO));
+}
+
 void ResourceManager::CreateDescriptorPools() {
-    std::array<VkDescriptorPoolSize, 3> poolSizes{};
+
+    uint32_t totalUniformBuffers = MAX_FRAMES_IN_FLIGHT + 1;
+    uint32_t totalStorageBuffers = MAX_FRAMES_IN_FLIGHT * 2;
+    uint32_t totalCombinedImageSamplers = (MAX_FRAMES_IN_FLIGHT + 5000) + 2;
+
+    totalUniformBuffers += 2;
+    totalStorageBuffers += 2;
+    totalCombinedImageSamplers += 10;
+
+    std::array<VkDescriptorPoolSize, 4> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    poolSizes[0].descriptorCount = totalUniformBuffers;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSizes[1].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
-    poolSizes[2].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[2].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT + 5000);
+    poolSizes[1].descriptorCount = totalStorageBuffers;
+    poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    poolSizes[2].descriptorCount = totalStorageBuffers;
+    poolSizes[3].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSizes[3].descriptorCount = totalCombinedImageSamplers;
     
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
+    poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
     poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
     poolInfo.pPoolSizes = poolSizes.data();
-    poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT + 5);
     
     if (vkCreateDescriptorPool(m_Device->GetDevice(), &poolInfo, nullptr, &m_DescriptorPool) != VK_SUCCESS) {
         throw std::runtime_error("failed to create descriptor pool!");
@@ -240,9 +304,11 @@ void ResourceManager::CreateDescriptorSets(PipelineManager* pipelineManager) {
         }
 
         VkDescriptorBufferInfo materialBufferInfo{};
-        materialBufferInfo.buffer = 
+        materialBufferInfo.buffer = m_MaterialBuffer;
+        materialBufferInfo.offset = 0;
+        materialBufferInfo.range = VK_WHOLE_SIZE;
 
-        std::array<VkWriteDescriptorSet, 3> descriptorWrites{};
+        std::array<VkWriteDescriptorSet, 4> descriptorWrites{};
 
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorWrites[0].dstSet = m_DescriptorSets[i];
@@ -260,24 +326,132 @@ void ResourceManager::CreateDescriptorSets(PipelineManager* pipelineManager) {
         descriptorWrites[1].descriptorCount = 1;
         descriptorWrites[1].pBufferInfo = &vertexBufferInfo;
 
+
         descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorWrites[2].dstSet = m_DescriptorSets[i];
-        descriptorWrites[2].dstBinding = 2;  // Now binding 2
+        descriptorWrites[2].dstBinding = 2;  // Now binding 3
         descriptorWrites[2].dstArrayElement = 0;
-        descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[2].descriptorCount = static_cast<uint32_t>(m_Textures.size());
-        descriptorWrites[2].pImageInfo = imageInfos.data();
+        descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        descriptorWrites[2].descriptorCount = 1;
+        descriptorWrites[2].pBufferInfo = &materialBufferInfo;
+
+        descriptorWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[3].dstSet = m_DescriptorSets[i];
+        descriptorWrites[3].dstBinding = 3;  // Now binding 2
+        descriptorWrites[3].dstArrayElement = 0;
+        descriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[3].descriptorCount = static_cast<uint32_t>(m_Textures.size());
+        descriptorWrites[3].pImageInfo = imageInfos.data();
 
 
         vkUpdateDescriptorSets(m_Device->GetDevice(), static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
 }
 
+void ResourceManager::CreateLightingDescriptorSet(PipelineManager* pipelineManager)
+{
+
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = m_DescriptorPool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &pipelineManager->GetLightingDescriptorSetLayout();
+
+    if (vkAllocateDescriptorSets(m_Device->GetDevice(), &allocInfo, &m_LightingDescriptorSet) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to allocate lighting  descriptor set!");
+    }
+
+    std::array<VkWriteDescriptorSet, 5> descriptorWrites{};
+
+    VkDescriptorImageInfo albedoInfo{};
+    albedoInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    albedoInfo.imageView = m_GBuffer.albedoImageView;
+    albedoInfo.sampler = m_GBuffer.sampler;
+
+    descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrites[0].dstSet = m_LightingDescriptorSet;
+    descriptorWrites[0].dstBinding = 0;
+    descriptorWrites[0].dstArrayElement = 0;
+    descriptorWrites[0].descriptorCount = 1;
+    descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorWrites[0].pImageInfo = &albedoInfo;
+
+    VkDescriptorImageInfo normalInfo{};
+    normalInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    normalInfo.imageView = m_GBuffer.normalImageView;
+    normalInfo.sampler = m_GBuffer.sampler;
+    
+    descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrites[1].dstSet = m_LightingDescriptorSet;
+    descriptorWrites[1].dstBinding = 1;
+    descriptorWrites[1].dstArrayElement = 0;
+    descriptorWrites[1].descriptorCount = 1;
+    descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorWrites[1].pImageInfo = &normalInfo;
+
+    VkDescriptorImageInfo pbrInfo{};
+    pbrInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    pbrInfo.imageView = m_GBuffer.pbrImageView;
+    pbrInfo.sampler = m_GBuffer.sampler;
+
+    descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrites[2].dstSet = m_LightingDescriptorSet;
+    descriptorWrites[2].dstBinding = 2;
+    descriptorWrites[2].descriptorCount = 1;
+    descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorWrites[2].pImageInfo = &pbrInfo;
+
+    VkDescriptorImageInfo depthInfo{};
+    depthInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+    depthInfo.imageView = m_DepthImageView;
+    depthInfo.sampler = m_GBuffer.sampler;
+
+    descriptorWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrites[3].dstSet = m_LightingDescriptorSet;
+    descriptorWrites[3].dstBinding = 3; // New binding number
+    descriptorWrites[3].dstArrayElement = 0;
+    descriptorWrites[3].descriptorCount = 1;
+    descriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorWrites[3].pImageInfo = &depthInfo;
+
+    VkDescriptorBufferInfo matrixBufferInfo{};
+    matrixBufferInfo.buffer = m_UniformBuffers[0]; // Use first frame's UBO
+    matrixBufferInfo.offset = 0;
+    matrixBufferInfo.range = sizeof(UniformBufferObject);
+
+    descriptorWrites[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrites[4].dstSet = m_LightingDescriptorSet;
+    descriptorWrites[4].dstBinding = 4;
+    descriptorWrites[4].dstArrayElement = 0;
+    descriptorWrites[4].descriptorCount = 1;
+    descriptorWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorWrites[4].pBufferInfo = &matrixBufferInfo;
+
+    vkUpdateDescriptorSets(m_Device->GetDevice(), static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+}
+
+void ResourceManager::RecreateResources(SwapChain* pSwapchain, PipelineManager* pPipelineManager)
+{
+    CleanDepth();
+    CleanupGBuffer();
+
+    CreateDepthResources(pSwapchain);
+
+    CreateGBuffer(pSwapchain->GetSwapChainExtent());
+
+    CleanupDescriptorPool();
+
+    CreateDescriptorPools();
+
+    CreateDescriptorSets(pPipelineManager);
+    CreateLightingDescriptorSet(pPipelineManager);
+}
+
 void ResourceManager::CreateGBuffer(VkExtent2D extent)
 {
 
     //albedo
-    m_GBuffer.albedo.format = VK_FORMAT_R8G8B8A8_UNORM;
+    m_GBuffer.albedo.format = VK_FORMAT_R8G8B8A8_SRGB;
     CreateImage(extent.width,extent.height,
                 m_GBuffer.albedo.format,
                 VK_IMAGE_TILING_OPTIMAL,
@@ -290,7 +464,7 @@ void ResourceManager::CreateGBuffer(VkExtent2D extent)
                                                 VK_IMAGE_ASPECT_COLOR_BIT);
 
     //normal
-	m_GBuffer.normal.format = VK_FORMAT_R16G16B16A16_SFLOAT; // higher precision for normals
+    m_GBuffer.normal.format = VK_FORMAT_R8G8B8A8_UNORM;
 	CreateImage(extent.width, extent.height,
 		        m_GBuffer.normal.format,
 		        VK_IMAGE_TILING_OPTIMAL,
@@ -302,6 +476,21 @@ void ResourceManager::CreateGBuffer(VkExtent2D extent)
 		                                        m_GBuffer.normal.format,
 		                                        VK_IMAGE_ASPECT_COLOR_BIT);
     m_GBuffer.normal.currentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    m_GBuffer.pbr.format = VK_FORMAT_R8G8B8A8_UNORM;
+    CreateImage(
+        extent.width, extent.height,
+        m_GBuffer.pbr.format,
+        VK_IMAGE_TILING_OPTIMAL,
+        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        m_GBuffer.pbr, m_GBuffer.pbrImageMemory
+    );
+    m_GBuffer.pbrImageView = CreateImageView(
+        m_GBuffer.pbr.image,
+        m_GBuffer.pbr.format,
+        VK_IMAGE_ASPECT_COLOR_BIT
+    );
 
 	m_GBuffer.depth = m_DepthImage;
 
@@ -461,6 +650,10 @@ void ResourceManager::CleanupGBuffer()
 	vkDestroyImage(m_Device->GetDevice(), m_GBuffer.normal.image, nullptr);
 	vkFreeMemory(m_Device->GetDevice(), m_GBuffer.normalImageMemory, nullptr);
 
+    vkDestroyImageView(m_Device->GetDevice(), m_GBuffer.pbrImageView, nullptr);
+    vkDestroyImage(m_Device->GetDevice(), m_GBuffer.pbr.image, nullptr);
+    vkFreeMemory(m_Device->GetDevice(), m_GBuffer.pbrImageMemory, nullptr);
+
     //the depth is done somewhere else
 }
 
@@ -493,6 +686,9 @@ ResourceManager::~ResourceManager()
 	vkDestroyBuffer(m_Device->GetDevice(), m_IndexBuffer, nullptr);
 	vkFreeMemory(m_Device->GetDevice(), m_IndexBufferMemory, nullptr);
 
+    vkDestroyBuffer(m_Device->GetDevice(), m_MaterialBuffer, nullptr);
+    vkFreeMemory(m_Device->GetDevice(), m_MaterialBufferMemory, nullptr);
+
     CleanupGBuffer();
 }
 
@@ -514,15 +710,12 @@ void ResourceManager::Create(SwapChain* swapChain, PipelineManager* pipelineMana
 
     CreateGBuffer(swapChain->GetSwapChainExtent());
 
-    CreateTextureImage("textures/error.png");
-
-
     int textureAmount{ 0 };
 
 	// create texture here from the paths that the scene class has loaded
 	for (const auto& path : m_TexturePaths)
 	{
-		CreateTextureImage(path);
+		CreateTextureImage(path.first,path.second);
         textureAmount++;
 	}
     std::cout << textureAmount << " amount of textures loaded." << std::endl;
@@ -537,10 +730,20 @@ void ResourceManager::Create(SwapChain* swapChain, PipelineManager* pipelineMana
 	// scene class should have loaded the vertex and index data
 
     CreateVertexPullingBuffer();
+    CreateMaterialBuffer();
 	CreateIndexBuffer();
 	CreateUniformBuffers();
 	CreateDescriptorPools();
     CreateDescriptorSets(pipelineManager);
+    CreateLightingDescriptorSet(pipelineManager);
+}
+
+void ResourceManager::CleanupDescriptorPool()
+{
+    if (m_DescriptorPool != VK_NULL_HANDLE) {
+        vkDestroyDescriptorPool(m_Device->GetDevice(), m_DescriptorPool, nullptr);
+        m_DescriptorPool = VK_NULL_HANDLE;
+    }
 }
 
 VkImageView ResourceManager::CreateImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags)

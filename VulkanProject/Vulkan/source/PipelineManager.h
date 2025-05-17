@@ -37,9 +37,15 @@ public:
 	VkPipeline GetGBufferPipeline() const { return m_GBufferPipeline; }
 	VkPipelineLayout GetGBufferPipelineLayout() const { return m_GBufferPipelineLayout; }
 
+	void CreateLightingPipeline();
+	VkDescriptorSetLayout& GetLightingDescriptorSetLayout() { return m_LightingDescriptorSetLayout; }
+	VkPipeline GetLightingPipeline() const { return m_LightingPipeline; }
+	VkPipelineLayout GetLightingPipelineLayout() const { return m_LightingPipelineLayout; }
+
 
 private:
 	void CreateDescriptorSetLayout();
+	void CreateLightingDescriptorSetLayout();
 	void CreateForwardPipeline();
 	void SavePipelineCache();
 
@@ -51,6 +57,10 @@ private:
 	VkDescriptorSetLayout m_DescriptorSetLayout;
 	VkPipeline m_GBufferPipeline;
 	VkPipelineLayout m_GBufferPipelineLayout;
+
+	VkDescriptorSetLayout m_LightingDescriptorSetLayout;
+	VkPipeline m_LightingPipeline;
+	VkPipelineLayout m_LightingPipelineLayout;
 
 	VkPipeline m_DepthPrepassPipeline;
 	VkPipelineLayout m_DepthPrepassPipelineLayout;

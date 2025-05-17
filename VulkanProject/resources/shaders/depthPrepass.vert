@@ -9,11 +9,24 @@ struct Vertex {
     vec3 pos;
     vec3 color;
     vec2 texCoord;
+    vec3 tangent;
+    vec3 bitTangent;
+};
+
+struct Material {
+    int baseColorTextureIndex;
+    int normalTextureIndex;
+    int metallicRoughnessTextureIndex;
+    int useTextureFlags;
 };
 
 layout(std430, binding = 1) readonly buffer VertexBuffer {
     Vertex vertices[];
 } vertexBuffer;
+
+layout(std430, binding = 2) readonly buffer MaterialBuffer {
+    Material materials[];
+}materialBuffer;
 
 layout(push_constant) uniform PushConstantData {
     mat4 model;

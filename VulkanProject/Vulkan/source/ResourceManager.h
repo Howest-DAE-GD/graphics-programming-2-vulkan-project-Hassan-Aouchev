@@ -11,61 +11,43 @@
 #include <iostream>
 
 struct alignas(16) GpuMaterial {
-    glm::vec4 baseColor;
-    float roughness;
-    float metallic;
     uint32_t baseColorTextureIndex;
     uint32_t normalTextureIndex;
     uint32_t metallicRoughnessTextureIndex;
     uint32_t useTextureFlags;
+
 };
 
 struct Vertex {
     alignas(16) glm::vec3 pos;
-    alignas(16) glm::vec3 color;
+    alignas(16) glm::vec3 normal;
     alignas(8) glm::vec2 texCoord;
+    alignas(16) glm::vec3 tangent;
+    alignas(16) glm::vec3 bitTangent;
 
-    static VkVertexInputBindingDescription GetBindingDescription() {
-        VkVertexInputBindingDescription bindingDescription{};
-
-        bindingDescription.binding = 0;
-        bindingDescription.stride = sizeof(Vertex);
-        bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-        return bindingDescription;
-    }
-    static std::array<VkVertexInputAttributeDescription, 3> GetAttributeDescriptions() {
-        std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions{};
-
-        attributeDescriptions[0].binding = 0;
-        attributeDescriptions[0].location = 0;
-        attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-        attributeDescriptions[0].offset = offsetof(Vertex, pos);
-
-        attributeDescriptions[1].binding = 0;
-        attributeDescriptions[1].location = 1;
-        attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-        attributeDescriptions[1].offset = offsetof(Vertex, color);
-
-        attributeDescriptions[2].binding = 0;
-        attributeDescriptions[2].location = 2;
-        attributeDescriptions[2].format = VK_FORMAT_R32G32_SFLOAT;
-        attributeDescriptions[2].offset = offsetof(Vertex, texCoord);
-
-        return attributeDescriptions;
-    }
     bool operator==(const Vertex& other) const {
-        return pos == other.pos && color == other.color && texCoord == other.texCoord;
+        return pos == other.pos &&
+            normal == other.normal &&
+            texCoord == other.texCoord &&
+            tangent == other.tangent &&
+            bitTangent == other.bitTangent;
     }
-    
 };
 
 namespace std {
     template<> struct hash<Vertex> {
-        size_t operator()(Vertex const& vertex) const {
-            return ((hash<glm::vec3>()(vertex.pos) ^
-                (hash<glm::vec3>()(vertex.color) << 1)) >> 1) ^
-                (hash<glm::vec2>()(vertex.texCoord) << 1);
+        size_t operator()(const Vertex& vertex) const {
+            size_t seed = 0;
+            auto hasherVec3 = hash<glm::vec3>();
+            auto hasherVec2 = hash<glm::vec2>();
+
+            seed ^= hasherVec3(vertex.pos) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+            seed ^= hasherVec3(vertex.normal) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+            seed ^= hasherVec2(vertex.texCoord) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+            seed ^= hasherVec3(vertex.tangent) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+            seed ^= hasherVec3(vertex.bitTangent) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+
+            return seed;
         }
     };
 }
@@ -77,13 +59,13 @@ struct UniformBufferObject {
 
 struct PushConstantData {
     glm::mat4 model;
-    alignas(16) int textureIndex;
+    alignas(16) int meshIndex;
 };
 
 struct MeshHandle {
     uint32_t indexOffset;
     uint32_t indexCount;
-    int textureIndex;
+    GpuMaterial material;
 	glm::mat4 modelMatrix;
 };
 
@@ -96,21 +78,30 @@ struct GBuffer {
     // G-Buffer images
     Image albedo;
     Image normal;
+    Image pbr;
     Image depth;
     // i can add more if needed
 
     // Image views
     VkImageView albedoImageView;
     VkImageView normalImageView;
+    VkImageView pbrImageView;
     VkImageView depthImageView;
 
     // Memory allocations
     VkDeviceMemory albedoImageMemory;
     VkDeviceMemory normalImageMemory;
-    VkDeviceMemory depthImageMemory;
+    VkDeviceMemory pbrImageMemory;
 
     // Sampler (can be shared)
     VkSampler sampler;
+};
+
+struct LightingUBO {
+    alignas(16)glm::vec3 viewPos;
+    alignas(16)glm::vec3 lightDir;
+    alignas(16)glm::vec3 lightColor;
+    alignas(16)float ambientStrength;
 };
 
 class Device;
@@ -121,17 +112,21 @@ class ResourceManager
 {
 private:
 
-    void CreateTextureImage(const std::string& path);
+    void CreateTextureImage(const std::string& path, VkFormat format);
     void CreateTextureImageView();
     void CreateTextureSampler();
     void CreateVertexBuffer();
+    void CreateMaterialBuffer();
     void CreateIndexBuffer();
     void CreateUniformBuffers();
-
-    void CreateDescriptorPools();
-    void CreateDescriptorSets(PipelineManager* pipelineManager);
-
+    void CreateLightingUniformBuffer();
     void CreateGBuffer(VkExtent2D extent);
+    void CreateDescriptorSets(PipelineManager* pipelineManager);
+    void CreateLightingDescriptorSet(PipelineManager* pipelineManager);
+    void CreateDescriptorPools();
+    void CreateDepthResources(SwapChain* swapChain);
+
+
 
     void CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
     void CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
@@ -140,7 +135,7 @@ private:
     uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
     void CleanupGBuffer();
-
+    void CleanupDescriptorPool();
 
     struct Texture {
         VkImageView imageView;
@@ -151,8 +146,15 @@ private:
 	std::vector<Texture> m_Textures;
 
     VkBuffer m_VertexBuffer;
-    VkBuffer m_MaterialBuffer;
     VkDeviceMemory m_VertexBufferMemory;
+
+    VkBuffer m_MaterialBuffer;
+    VkDeviceMemory m_MaterialBufferMemory;
+
+    VkBuffer m_LightingUniformBuffer;
+    VkDeviceMemory m_LightingUniformBufferMemory;
+    void* m_LightingUniformBufferMapped;
+
     VkBuffer m_IndexBuffer;
     VkDeviceMemory m_IndexBufferMemory;
 
@@ -163,6 +165,8 @@ private:
     VkDescriptorPool m_DescriptorPool;
     std::vector<VkDescriptorSet> m_DescriptorSets;
 
+    VkDescriptorSet m_LightingDescriptorSet;
+
 	Device* m_Device;
 	CommandManager* m_CommandManager;
 
@@ -172,7 +176,7 @@ private:
 
     std::vector<PushConstantData> m_PushConstants;
     std::unordered_map<std::string, uint32_t> m_TextureLookup;
-    std::vector<std::string> m_TexturePaths;
+    std::vector <std::pair< std::string, VkFormat >> m_TexturePaths;
 
     std::vector<MeshHandle> m_Meshes;
     std::vector<Vertex> m_Vertices;
@@ -186,28 +190,27 @@ public:
 
 	~ResourceManager();
 
-    void CleanDepth();
 
     GBuffer& GetGBuffer() { return m_GBuffer; }
 
-    void AddModel(MeshHandle meshHandle) { 
+    void AddModel(MeshHandle meshHandle,int meshIndex) { 
 		MeshHandle newMeshHandle = meshHandle;
         m_Meshes.push_back(meshHandle);
-		m_PushConstants.push_back({ meshHandle.modelMatrix, meshHandle.textureIndex+1 });
+		m_PushConstants.push_back({ meshHandle.modelMatrix, meshIndex});
     }
-    int AddTexture(const std::string path) { 
+    int AddTexture(const std::string path,VkFormat format) { 
         auto it = m_TextureLookup.find(path);
         if (it != m_TextureLookup.end()) {
             return it->second;
         }
 
         uint32_t index = static_cast<uint32_t>(m_TexturePaths.size());
-        m_TexturePaths.push_back(path);
+        m_TexturePaths.push_back(std::make_pair(path,format));
         m_TextureLookup[path] = index;
         return index;
 }
 
-    int GetTextureAmount() const { return m_TexturePaths.size()+1; }
+    int GetTextureAmount() const { return m_TexturePaths.size(); }
     void SetCommandManager(CommandManager* commandManager);
 
     void Create(SwapChain* swapChain, PipelineManager* pipelineManager);
@@ -216,11 +219,16 @@ public:
 		m_PushConstants[index].model = model;
 	}
 
-    std::vector<MeshHandle> GetMeshes() const { return m_Meshes; }
-	std::vector<void*> GetUniformBuffersMapped() { return m_UniformBuffersMapped; }
-	VkBuffer GetVertexBuffer() const { return m_VertexBuffer; }
+    void RecreateResources(SwapChain* pSwapchain,PipelineManager* pPipelineManager);
+    
+    std::vector<MeshHandle>& GetMeshes() { return m_Meshes; }
+	std::vector<void*> GetUniformBuffersMapped() { return m_UniformBuffersMapped;}
+	VkBuffer GetVertexBuffer() const { return m_VertexBuffer;}
+    VkBuffer GetMaterialBuffer() const { return m_MaterialBuffer;}
 	VkBuffer GetIndexBuffer() const { return m_IndexBuffer; }
 	std::vector<VkDescriptorSet>& GetDescriptorSets() { return m_DescriptorSets; }
+    VkDescriptorSet& GetLightingDescriptorSet() { return m_LightingDescriptorSet; }
+
 
     std::vector<PushConstantData>& GetPushConstants() { return m_PushConstants; }
 
@@ -229,7 +237,6 @@ public:
 	VkImageView GetDepthImageView() const { return m_DepthImageView; }
     Image& GetDepthImage() { return m_DepthImage; }
     VkImageView CreateImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags);
-    void CreateDepthResources(SwapChain* swapChain);
     VkFormat FindSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
     VkFormat FindDepthFormat();
     void TransitionImageLayout(Image& image, VkImageLayout newLayout, VkPipelineStageFlags2 srcStageMask,
@@ -242,4 +249,6 @@ public:
                                      VkPipelineStageFlags2 dstStageMask,
                                      VkPipelineStageFlags2 dstAccessMask);
     void CreateVertexPullingBuffer();
+
+    void CleanDepth();
 };

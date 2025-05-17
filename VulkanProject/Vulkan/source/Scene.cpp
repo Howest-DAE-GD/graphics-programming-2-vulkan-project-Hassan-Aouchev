@@ -12,20 +12,23 @@ void Scene::LoadScene(const std::string& scenePath)
 
     std::vector<std::string> modelPaths = {/* list of model paths */ };
 
+    m_ResourceManager->AddTexture("textures/error.png",VK_FORMAT_R8G8B8A8_UNORM);
 
     Assimp::Importer importer;
     const aiScene* scene = importer.ReadFile(scenePath,
         aiProcess_Triangulate |
         aiProcess_GenSmoothNormals |
         aiProcess_FlipUVs |
-        aiProcess_CalcTangentSpace
+        aiProcess_CalcTangentSpace|
+        aiProcess_FixInfacingNormals
+
         /* | aiProcess_RemoveRedundantMaterials */ );
 
 
     if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode) {
         throw std::runtime_error("ERROR::ASSIMP::" + std::string(importer.GetErrorString()));
     }
-
+    std::cout << scenePath << std::endl;
     LoadObjModel(scenePath, baseDir, scene);
 }
 
@@ -38,7 +41,7 @@ MeshHandle Scene::LoadObjModel(const std::string& modelPath, const std::filesyst
 
         MeshHandle meshHandle = LoadMeshData(i,mesh, scene, baseDir);
 
-        m_ResourceManager->AddModel(meshHandle);
+        m_ResourceManager->AddModel(meshHandle,i);
 
         meshHandles.push_back(meshHandle);
     }
@@ -56,37 +59,6 @@ void Scene::ProcessNode(aiNode* node, const aiScene* scene)
 
 void Scene::ProcessMesh(aiMesh* mesh, const aiScene* scene)
 {
-    //std::unordered_map<Vertex, uint32_t> uniqueVertices;
-    //
-    //for (unsigned int i = 0; i < mesh->mNumVertices; i++) {
-    //    Vertex vertex;
-    //
-    //    vertex.pos = glm::vec3(
-    //        mesh->mVertices[i].x,
-    //        mesh->mVertices[i].y,
-    //        mesh->mVertices[i].z
-    //    );
-    //    vertex.color = mesh->HasNormals() ? glm::vec3(
-    //        mesh->mNormals[i].x,
-    //        mesh->mNormals[i].y,
-    //        mesh->mNormals[i].z
-    //    ) : glm::vec3(0.f);
-    //
-    //    if (mesh->mTextureCoords[0]) {
-    //        vertex.texCoord = glm::vec2(
-    //            mesh->mTextureCoords[0][i].x,
-    //            mesh->mTextureCoords[0][i].y
-    //        );
-    //    }
-    //    else {
-    //        vertex.texCoord = glm::vec2(0.0f);
-    //    }
-    //
-    //    if (uniqueVertices.count(vertex) == 0) {
-    //        uniqueVertices[vertex] = static_cast<uint32_t>(m_ResourceManager->GetVertices().size());
-    //        m_ResourceManager->GetVertices().push_back(vertex);
-    //    }
-    //}
 }
 
 const aiNode* Scene::FindMeshNode(const aiNode* node, unsigned int meshIndex)
@@ -119,12 +91,8 @@ MeshHandle Scene::LoadMeshData(unsigned int meshIndex, aiMesh* mesh, const aiSce
     MeshHandle meshHandle{};
     meshHandle.indexOffset = static_cast<uint32_t>(m_ResourceManager->GetIndices().size());
     const aiNode* meshNode = FindMeshNode(scene->mRootNode,meshIndex);
-
     if(meshNode)
     meshHandle.modelMatrix = GetWorldTransform(meshNode);
-
-    // Convert Assimp matrix to glm matrix
-    //glm::mat4 modelMatrix = GetNodeWorldTransform(meshNode);
 
     meshHandle.modelMatrix = glm::mat4(1.0f);
     const float* mat = glm::value_ptr(meshHandle.modelMatrix);
@@ -137,22 +105,34 @@ MeshHandle Scene::LoadMeshData(unsigned int meshIndex, aiMesh* mesh, const aiSce
             unsigned int vertexIndex = face.mIndices[idx];
 
             Vertex vertex{};
-            vertex.pos = {
-                mesh->mVertices[vertexIndex].x,
-                mesh->mVertices[vertexIndex].y,
-                mesh->mVertices[vertexIndex].z
-            };
+            aiVector3D position = scene->mRootNode->mTransformation * mesh->mVertices[vertexIndex];
+
+            vertex.pos = { position.x,
+                           position.y,
+                           position.z };
 
             vertex.texCoord = mesh->mTextureCoords[0]
                 ? glm::vec2(mesh->mTextureCoords[0][vertexIndex].x,
                     mesh->mTextureCoords[0][vertexIndex].y)
                 : glm::vec2(0.0f, 0.0f);
 
-            vertex.color = mesh->HasVertexColors(0)
-                ? glm::vec3(mesh->mColors[0][vertexIndex].r,
-                    mesh->mColors[0][vertexIndex].g,
-                    mesh->mColors[0][vertexIndex].b)
+            vertex.normal = mesh->HasNormals()
+                ? glm::vec3(mesh->mNormals[vertexIndex].x,
+                    mesh->mNormals[vertexIndex].y,
+                    mesh->mNormals[vertexIndex].z)
                 : glm::vec3(1.0f);
+
+            vertex.tangent = mesh->HasTangentsAndBitangents()
+                ? glm::vec3(mesh->mTangents[vertexIndex].x,
+                    mesh->mTangents[vertexIndex].y,
+                    mesh->mTangents[vertexIndex].z)
+                : glm::vec3(0.0f);
+
+            vertex.bitTangent = mesh->HasTangentsAndBitangents()
+                ? glm::vec3(mesh->mBitangents[vertexIndex].x,
+                    mesh->mBitangents[vertexIndex].y,
+                    mesh->mBitangents[vertexIndex].z)
+                : glm::vec3(0.0f);
 
             if (uniqueVertices.count(vertex) == 0) {
                 uniqueVertices[vertex] = static_cast<uint32_t>(m_ResourceManager->GetVertices().size());
@@ -167,22 +147,33 @@ MeshHandle Scene::LoadMeshData(unsigned int meshIndex, aiMesh* mesh, const aiSce
     meshHandle.indexCount = static_cast<uint32_t>(m_ResourceManager->GetIndices().size()) - meshHandle.indexOffset;
 
     // Load texture
-    if (mesh->mMaterialIndex > 0) {
+    if (mesh->mMaterialIndex >= 0) {
         aiMaterial* material = scene->mMaterials[mesh->mMaterialIndex];
         aiString texPath;
         if (material->GetTexture(aiTextureType_DIFFUSE, 0, &texPath) == AI_SUCCESS) {
             std::filesystem::path texturePath = baseDir / texPath.C_Str();
             texturePath = texturePath.lexically_normal();
-            // Add texture if it doesn't exist already
-            meshHandle.textureIndex = m_ResourceManager->AddTexture(texturePath.string());
+            meshHandle.material.baseColorTextureIndex = m_ResourceManager->AddTexture(texturePath.string(),VK_FORMAT_R8G8B8A8_SRGB);
         }
         else {
-            meshHandle.textureIndex = 0;
-			//std::cout << "No texture found for mesh: " << mesh->mName.C_Str() << std::endl;
+            meshHandle.material.baseColorTextureIndex = 0;
         }
-    }
-    else {
-        meshHandle.textureIndex = 0;
+        if (material->GetTexture(aiTextureType_NORMALS, 0, &texPath) == AI_SUCCESS) {
+            std::filesystem::path texturePath = baseDir / texPath.C_Str();
+            texturePath = texturePath.lexically_normal();
+            meshHandle.material.normalTextureIndex = m_ResourceManager->AddTexture(texturePath.string(),VK_FORMAT_R8G8B8A8_UNORM);
+        }
+        else {
+            meshHandle.material.normalTextureIndex = 0;
+        }
+        if (material->GetTexture(aiTextureType_METALNESS, 0, &texPath) == AI_SUCCESS) {
+            std::filesystem::path texturePath = baseDir / texPath.C_Str();
+            texturePath = texturePath.lexically_normal();
+            meshHandle.material.metallicRoughnessTextureIndex = m_ResourceManager->AddTexture(texturePath.string(), VK_FORMAT_R8G8B8A8_UNORM);
+        }
+        else {
+            meshHandle.material.metallicRoughnessTextureIndex = 0;
+        }
     }
 	std::cout << "----------Mesh loaded: " << mesh->mName.C_Str()<<" --------------" << std::endl;
     return meshHandle;

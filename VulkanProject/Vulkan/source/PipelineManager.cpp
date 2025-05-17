@@ -16,6 +16,9 @@ m_SwapChain(swapChain)
 
     CreateDepthPrepassPipeline();
     CreateGBufferPipeline();
+    CreateLightingDescriptorSetLayout();
+    CreateLightingPipeline();
+
 }
 
 PipelineManager::~PipelineManager()
@@ -33,6 +36,11 @@ PipelineManager::~PipelineManager()
     // gBugger pipeline cleanup
     vkDestroyPipeline(m_Device->GetDevice(), m_GBufferPipeline, nullptr);
     vkDestroyPipelineLayout(m_Device->GetDevice(), m_GBufferPipelineLayout, nullptr);
+
+    vkDestroyPipeline(m_Device->GetDevice(), m_LightingPipeline, nullptr);
+    vkDestroyPipelineLayout(m_Device->GetDevice(), m_LightingPipelineLayout, nullptr);
+    vkDestroyDescriptorSetLayout(m_Device->GetDevice(), m_LightingDescriptorSetLayout, nullptr);
+
 }
 
 void PipelineManager::CreateDepthPrepassPipeline()
@@ -173,23 +181,6 @@ void PipelineManager::CreateGBufferPipeline()
     VkShaderModule vertShaderModule = CreateShaderModule(vertShaderCode);
     VkShaderModule fragShaderModule = CreateShaderModule(fragShaderCode);
 
-    struct SpecializationData {
-        uint32_t maxTextureCount;
-    }specializationData;
-
-    specializationData.maxTextureCount = m_ResourceManager->GetTextureAmount();
-
-    VkSpecializationMapEntry specializationMapEntry{};
-    specializationMapEntry.constantID = 0;
-    specializationMapEntry.offset = offsetof(SpecializationData, maxTextureCount);
-    specializationMapEntry.size = sizeof(uint32_t);
-
-    VkSpecializationInfo specializationInfo{};
-    specializationInfo.mapEntryCount = 1;
-    specializationInfo.pMapEntries = &specializationMapEntry;
-    specializationInfo.dataSize = sizeof(SpecializationData);
-    specializationInfo.pData = &specializationData;
-
     VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
     vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -201,14 +192,15 @@ void PipelineManager::CreateGBufferPipeline()
     fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
     fragShaderStageInfo.module = fragShaderModule;
     fragShaderStageInfo.pName = "main";
-    fragShaderStageInfo.pSpecializationInfo = &specializationInfo;
 
     VkPipelineShaderStageCreateInfo shaderStage[] = { vertShaderStageInfo,fragShaderStageInfo };
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInputInfo.vertexBindingDescriptionCount = 0;
+    vertexInputInfo.pVertexBindingDescriptions = nullptr;
     vertexInputInfo.vertexAttributeDescriptionCount = 0;
-    vertexInputInfo.vertexAttributeDescriptionCount = 0;
+    vertexInputInfo.pVertexAttributeDescriptions = nullptr;
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
     inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -243,7 +235,7 @@ void PipelineManager::CreateGBufferPipeline()
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.stencilTestEnable = VK_FALSE;
 
-    std::array<VkPipelineColorBlendAttachmentState, 2> colorBlendAttachments{};
+    std::array<VkPipelineColorBlendAttachmentState, 3> colorBlendAttachments{};
 
     // Albedo attachment
     colorBlendAttachments[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
@@ -255,6 +247,12 @@ void PipelineManager::CreateGBufferPipeline()
                                               VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 
     colorBlendAttachments[1].blendEnable = VK_FALSE;
+
+    // pbr attachment
+    colorBlendAttachments[2].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+        VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+
+    colorBlendAttachments[2].blendEnable = VK_FALSE;
 
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -290,13 +288,14 @@ void PipelineManager::CreateGBufferPipeline()
     }
 
     VkFormat colorFormats[] = {
-        VK_FORMAT_R8G8B8A8_UNORM,     // Albedo
-        VK_FORMAT_R16G16B16A16_SFLOAT  // Normals
+        VK_FORMAT_R8G8B8A8_SRGB,     // Albedo
+        VK_FORMAT_R8G8B8A8_UNORM,    // Normals
+        VK_FORMAT_R8G8B8A8_UNORM
     };
 
     VkPipelineRenderingCreateInfo pipelineRenderingCreateInfo{};
     pipelineRenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-    pipelineRenderingCreateInfo.colorAttachmentCount = 2;
+    pipelineRenderingCreateInfo.colorAttachmentCount = 3;
     pipelineRenderingCreateInfo.pColorAttachmentFormats = colorFormats;
     pipelineRenderingCreateInfo.depthAttachmentFormat = m_ResourceManager->FindDepthFormat();
     pipelineRenderingCreateInfo.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
@@ -328,6 +327,139 @@ void PipelineManager::CreateGBufferPipeline()
     vkDestroyShaderModule(m_Device->GetDevice(), vertShaderModule, nullptr);
 }
 
+void PipelineManager::CreateLightingPipeline()
+{
+    auto vertShaderCode = readFile("CustomShaders/lighting.vert.spv");
+    auto fragShaderCode = readFile("CustomShaders/lighting.frag.spv");
+
+    VkShaderModule vertShaderModule = CreateShaderModule(vertShaderCode);
+    VkShaderModule fragShaderModule = CreateShaderModule(fragShaderCode);
+
+    VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
+    vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    vertShaderStageInfo.module = vertShaderModule;
+    vertShaderStageInfo.pName = "main";
+
+    VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
+    fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    fragShaderStageInfo.module = fragShaderModule;
+    fragShaderStageInfo.pName = "main";
+    fragShaderStageInfo.pSpecializationInfo = nullptr;
+
+    VkPipelineShaderStageCreateInfo shaderStage[] = { vertShaderStageInfo,fragShaderStageInfo };
+
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInputInfo.vertexAttributeDescriptionCount = 0;
+    vertexInputInfo.vertexAttributeDescriptionCount = 0;
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.scissorCount = 1;
+
+    VkPipelineRasterizationStateCreateInfo rasterizer{};
+    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizer.depthClampEnable = VK_FALSE;
+    rasterizer.rasterizerDiscardEnable = VK_FALSE;
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer.lineWidth = 1.0f;
+    rasterizer.cullMode = VK_CULL_MODE_NONE;
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    rasterizer.depthBiasEnable = VK_FALSE;
+
+    VkPipelineMultisampleStateCreateInfo multisampling{};
+    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.sampleShadingEnable = VK_FALSE;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_FALSE;
+    depthStencil.depthWriteEnable = VK_FALSE; //dont write depth (depth prepass did this)
+    depthStencil.depthBoundsTestEnable = VK_FALSE;
+    depthStencil.stencilTestEnable = VK_FALSE;
+
+    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
+
+    // Albedo attachment
+    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+        VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    colorBlendAttachment.blendEnable = VK_FALSE;
+
+    // Normal attachment
+
+    VkPipelineColorBlendStateCreateInfo colorBlending{};
+    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlending.logicOpEnable = VK_FALSE;
+    colorBlending.attachmentCount = 1;
+    colorBlending.pAttachments = &colorBlendAttachment;
+
+    std::vector<VkDynamicState> dynamicStates = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+
+    VkPipelineDynamicStateCreateInfo dynamicState{};
+    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+    dynamicState.pDynamicStates = dynamicStates.data();
+
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = &m_LightingDescriptorSetLayout;
+    pipelineLayoutInfo.pushConstantRangeCount = 0;
+    pipelineLayoutInfo.pPushConstantRanges = nullptr;
+
+    if (vkCreatePipelineLayout(m_Device->GetDevice(), &pipelineLayoutInfo, nullptr, &m_LightingPipelineLayout) != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to create G-Buffer pipeline layout!");
+    }
+
+    VkFormat swapChainFormat = m_SwapChain->GetSwapChainImageFormat();
+
+    VkPipelineRenderingCreateInfo pipelineRenderingCreateInfo{};
+    pipelineRenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+    pipelineRenderingCreateInfo.colorAttachmentCount = 1;
+    pipelineRenderingCreateInfo.pColorAttachmentFormats = &swapChainFormat;
+    pipelineRenderingCreateInfo.depthAttachmentFormat = VK_FORMAT_UNDEFINED;
+    pipelineRenderingCreateInfo.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
+
+    VkGraphicsPipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineInfo.pNext = &pipelineRenderingCreateInfo;
+    pipelineInfo.stageCount = 2;
+    pipelineInfo.pStages = shaderStage;
+    pipelineInfo.pVertexInputState = &vertexInputInfo;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = &depthStencil;
+    pipelineInfo.pColorBlendState = &colorBlending;
+    pipelineInfo.pDynamicState = &dynamicState;
+    pipelineInfo.layout = m_LightingPipelineLayout;
+    pipelineInfo.renderPass = nullptr;
+    pipelineInfo.subpass = 0;
+    pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
+
+    if (vkCreateGraphicsPipelines(m_Device->GetDevice(), m_PipelineCache, 1, &pipelineInfo, nullptr, &m_LightingPipeline) != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to create G-Buffer pipeline!");
+    }
+
+    vkDestroyShaderModule(m_Device->GetDevice(), fragShaderModule, nullptr);
+    vkDestroyShaderModule(m_Device->GetDevice(), vertShaderModule, nullptr);
+}
+
 
 void PipelineManager::CreateDescriptorSetLayout() {
 
@@ -351,9 +483,19 @@ void PipelineManager::CreateDescriptorSetLayout() {
     m_Bindings.emplace_back(vertexBufferLayoutBinding);
     m_BindingFlags.push_back(0);
 
+
+    VkDescriptorSetLayoutBinding materialBufferLayoutBinding{};
+    materialBufferLayoutBinding.binding = 2;
+    materialBufferLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    materialBufferLayoutBinding.descriptorCount = 1;
+    materialBufferLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    materialBufferLayoutBinding.pImmutableSamplers = nullptr;
+    m_Bindings.emplace_back(materialBufferLayoutBinding);
+    m_BindingFlags.push_back(0);
+
     uint32_t textureAmount = 5000;
     VkDescriptorSetLayoutBinding samplerLayoutBinding{};
-    samplerLayoutBinding.binding = 2;
+    samplerLayoutBinding.binding = 3;
     samplerLayoutBinding.descriptorCount = textureAmount;
     samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     samplerLayoutBinding.pImmutableSamplers = nullptr;
@@ -381,6 +523,50 @@ void PipelineManager::CreateDescriptorSetLayout() {
 
     if (vkCreateDescriptorSetLayout(m_Device->GetDevice(), &layoutInfo, nullptr, &m_DescriptorSetLayout) != VK_SUCCESS) {
         throw std::runtime_error("failed to create descriptor set layout!");
+    }
+}
+
+void PipelineManager::CreateLightingDescriptorSetLayout()
+{
+    std::array<VkDescriptorSetLayoutBinding, 5> bindings = {};
+
+    bindings[0].binding = 0;
+    bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[0].descriptorCount = 1;
+    bindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings[0].pImmutableSamplers = nullptr;
+
+    bindings[1].binding = 1;
+    bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[1].descriptorCount = 1;
+    bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings[1].pImmutableSamplers = nullptr;
+
+    bindings[2].binding = 2;
+    bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[2].descriptorCount = 1;
+    bindings[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings[2].pImmutableSamplers = nullptr;
+
+    bindings[3].binding = 3;
+    bindings[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[3].descriptorCount = 1;
+    bindings[3].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings[3].pImmutableSamplers = nullptr;
+
+    bindings[4].binding = 4;
+    bindings[4].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    bindings[4].descriptorCount = 1;
+    bindings[4].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings[4].pImmutableSamplers = nullptr;
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+    layoutInfo.pBindings = bindings.data();
+
+    if (vkCreateDescriptorSetLayout(m_Device->GetDevice(), &layoutInfo, nullptr, &m_LightingDescriptorSetLayout) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create lighting descriptor set layout!");
     }
 }
 
@@ -594,14 +780,13 @@ void PipelineManager::CreateForwardPipeline()
         throw std::runtime_error("failed to create pipeline cache!");
     }
 
-    VkFormat colorFormat = m_SwapChain->GetSwapChainImageFormat();
+    VkFormat swapChainFormat = m_SwapChain->GetSwapChainImageFormat();
 
 	VkPipelineRenderingCreateInfo pipelineRenderingCreateInfo{};
 	pipelineRenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
 	pipelineRenderingCreateInfo.pNext = VK_NULL_HANDLE;
 	pipelineRenderingCreateInfo.colorAttachmentCount = 1;
-	pipelineRenderingCreateInfo.pColorAttachmentFormats = &colorFormat;
-	pipelineRenderingCreateInfo.depthAttachmentFormat = m_ResourceManager->FindDepthFormat();
+	pipelineRenderingCreateInfo.pColorAttachmentFormats = &swapChainFormat;
 	pipelineRenderingCreateInfo.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
 
     VkGraphicsPipelineCreateInfo pipelineInfo{};

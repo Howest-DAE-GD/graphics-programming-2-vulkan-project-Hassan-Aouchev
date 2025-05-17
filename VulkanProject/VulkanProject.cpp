@@ -17,7 +17,7 @@ int main() {
     try {
         ApplicationConfig config;
         config.applicationName = Constants::DEFAULT_APP_NAME;
-        config.scenePath = Constants::DEFAULT_SCENE_PATH;
+        config.scenePath = "scene/gltf/Sponza.gltf";
         config.width = Constants::DEFAULT_WIDTH;
         config.height = Constants::DEFAULT_HEIGHT;
 

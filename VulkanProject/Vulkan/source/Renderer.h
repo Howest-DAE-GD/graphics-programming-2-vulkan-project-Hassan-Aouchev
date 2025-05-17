@@ -20,9 +20,6 @@ public:
 	void CreateSyncObjects();
 	void RecreateSwapChain();
 
-	void RenderDepthPrepass(VkCommandBuffer commandBuffer);
-	void RenderGBufferPass(VkCommandBuffer commandBuffer);
-	void RecordDeferredCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 private:
 
 	static void framebufferResizeCallback(GLFWwindow* window, int width, int height) {
@@ -31,6 +28,12 @@ private:
 	}
 
 	void RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
+
+	void RenderDepthPrepass(VkCommandBuffer commandBuffer);
+	void RenderGBufferPass(VkCommandBuffer commandBuffer);
+	void RenderLightingPass(VkCommandBuffer commandBuffer, uint32_t imageIndex);
+	void RecordDeferredCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
+
 	std::vector<VkSemaphore> m_ImageAvailableSemaphores;
 	std::vector<VkSemaphore> m_RenderFinishedSemaphores;
 	std::vector<VkFence> m_InFlightFences;
