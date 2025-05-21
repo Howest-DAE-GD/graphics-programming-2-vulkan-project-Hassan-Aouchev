@@ -72,16 +72,6 @@ float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
 	return ggx1 * ggx2;
 }
 
-vec3 ACESFilmToneMapping(vec3 color)
-{
-    const float a = 2.51;
-    const float b = 0.03;
-    const float c = 2.43;
-    const float d = 0.59;
-    const float e = 0.14;
-    return clamp((color * (a * color + b)) / (color * (c * color + d) + e), 0.0, 1.0);
-}
-
 vec3 GetWorldPositionFromDepth(float depth, ivec2 texCoord) {
 
     vec2 ndc = vec2(
@@ -144,7 +134,7 @@ void main(){
    float depth = texelFetch(depthSampler, ivec2(gl_FragCoord.xy),0).r;
    vec3 worldPos = GetWorldPositionFromDepth(depth, ivec2(gl_FragCoord.xy));
 
-   vec3 ambientColor = vec3(0.1);
+   vec3 ambientColor = vec3(0.0);
    
    vec3 ambientLightColor = vec3(0.2f, 0.2f, 0.2f);
 
@@ -152,7 +142,7 @@ void main(){
 
 
    vec3 Lo = vec3(0.0);
-   for (int i = 0; i < 1 ;i++){
+   for (int i = 0; i < 3 ;i++){
         vec3 L;
         float attenuation;
         if(lightBuffer.light[i].position.w == 1.f)
@@ -187,8 +177,6 @@ void main(){
 
     vec3 ambient = ambientColor * albedo * ao;
     vec3 color = ambient + Lo;
-    
-    //color = ACESFilmToneMapping(color); // testing tonemap but need to make a seperate pipeline for this but i dont wanna make another pipeline :(
     
     outColor = vec4(color, 1.0);
 
