@@ -25,7 +25,7 @@ bool VulkanSystem::Initialize(WindowManager* windowManager) {
             throw std::runtime_error("Validation layers requested, but not available!");
         }
 
-        m_Instance = new Instance(windowManager->GetWindow());
+        m_Instance = new Instance(windowManager->GetWindow(), m_Config.enableValidationLayers);
 
         if (m_EnableValidationLayers) {
             if (!SetupDebugMessenger()) {
@@ -33,11 +33,16 @@ bool VulkanSystem::Initialize(WindowManager* windowManager) {
             }
         }
 
-        m_PhysicalDevice = new Device(m_Instance->GetInstance(), m_Instance->GetSurface());
+        m_PhysicalDevice = new Device(m_Instance->GetInstance(), m_Instance->GetSurface(), m_Config.enableValidationLayers);
         m_ResourceManager = new ResourceManager(m_PhysicalDevice);
         m_SwapChain = new SwapChain(m_PhysicalDevice, m_Instance, m_ResourceManager);
         m_Scene = new Scene(m_ResourceManager);
         m_Scene->LoadScene(m_Config.scenePath);
+
+        m_ResourceManager->AddPointLight({ 7.f,1.f,-0.f }, { 1.0f,0.0f,0.0f }, 50.f, 1.f);
+        //m_ResourceManager->AddPointLight({ 1.f,0.2f,-0.3f }, { 0.0f,1.0f,0.0f }, 1.f, 1.f);
+        //m_ResourceManager->AddDirectionalLight({-0.577f, 0.577f, 0.577f}, { 0.0f,1.0f,0.0f }, 1.f, 1.f);
+
         m_PipelineManager = new PipelineManager(m_PhysicalDevice, m_ResourceManager, m_SwapChain);
         m_CommandManager = new CommandManager(m_PhysicalDevice);
 

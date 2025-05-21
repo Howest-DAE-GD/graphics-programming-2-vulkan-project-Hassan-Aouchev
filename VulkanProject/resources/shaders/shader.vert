@@ -18,6 +18,7 @@ struct Material {
     int normalTextureIndex;
     int metallicRoughnessTextureIndex;
     int useTextureFlags;
+    int useAlpha;
 };
 
 layout(std430, binding = 1) readonly buffer VertexBuffer {

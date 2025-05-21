@@ -8,7 +8,7 @@ class Instance
 {
 public:
 
-	Instance(GLFWwindow* window);
+	Instance(GLFWwindow* window,bool enableValidationLayer);
 	~Instance();
 	
 	VkInstance GetInstance() const { return m_Instance; }
@@ -32,6 +32,8 @@ private:
 	const std::vector<const char*> m_ValidationLayers = {
 		"VK_LAYER_KHRONOS_validation"
 	};
+
+	bool m_EnableValidationLayers = false;
 
 	GLFWwindow* m_Window;
 	VkInstance m_Instance;

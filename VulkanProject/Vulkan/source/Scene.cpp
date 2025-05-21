@@ -12,15 +12,13 @@ void Scene::LoadScene(const std::string& scenePath)
 
     std::vector<std::string> modelPaths = {/* list of model paths */ };
 
-    m_ResourceManager->AddTexture("textures/error.png",VK_FORMAT_R8G8B8A8_UNORM);
+    m_ResourceManager->AddTexture("textures/error.png", VK_FORMAT_R8G8B8A8_SRGB);
 
     Assimp::Importer importer;
     const aiScene* scene = importer.ReadFile(scenePath,
         aiProcess_Triangulate |
-        aiProcess_GenSmoothNormals |
         aiProcess_FlipUVs |
-        aiProcess_CalcTangentSpace|
-        aiProcess_FixInfacingNormals
+        aiProcess_CalcTangentSpace
 
         /* | aiProcess_RemoveRedundantMaterials */ );
 
@@ -47,18 +45,6 @@ MeshHandle Scene::LoadObjModel(const std::string& modelPath, const std::filesyst
     }
 
     return meshHandles.empty() ? MeshHandle{} : meshHandles[0];
-}
-
-void Scene::ProcessNode(aiNode* node, const aiScene* scene)
-{
-    for (unsigned int i = 0; i < node->mNumMeshes; i++) {
-        aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
-        
-    }
-}
-
-void Scene::ProcessMesh(aiMesh* mesh, const aiScene* scene)
-{
 }
 
 const aiNode* Scene::FindMeshNode(const aiNode* node, unsigned int meshIndex)
@@ -154,6 +140,28 @@ MeshHandle Scene::LoadMeshData(unsigned int meshIndex, aiMesh* mesh, const aiSce
             std::filesystem::path texturePath = baseDir / texPath.C_Str();
             texturePath = texturePath.lexically_normal();
             meshHandle.material.baseColorTextureIndex = m_ResourceManager->AddTexture(texturePath.string(),VK_FORMAT_R8G8B8A8_SRGB);
+
+            meshHandle.material.hasAlphaMask = 0;
+            meshHandle.material.alphaCutoff = 0.5f;
+
+            aiString alphaModeStr;
+            if (material->Get("$mat.gltf.alphaMode",0,0, alphaModeStr)==AI_SUCCESS);// dont pass all textures to the depth buffer cause thats not necessary
+            {
+                std::string alphaMode = alphaModeStr.C_Str();
+
+                if (alphaMode == "MASK") {
+                    meshHandle.material.hasAlphaMask = 1;
+
+                    float alphaCutoff = 0.5f;
+                    if (material->Get("$mat.gltf.alphaCutoff", 0, 0, alphaCutoff) == AI_SUCCESS) {
+                        meshHandle.material.alphaCutoff = alphaCutoff;
+                    }
+                }
+            }
+
+            if (meshHandle.material.hasAlphaMask) {
+                meshHandle.material.alphaTextureIndex = m_ResourceManager->AddAlphaTexture(texturePath.string(), VK_FORMAT_R8G8B8A8_SRGB);
+            }
         }
         else {
             meshHandle.material.baseColorTextureIndex = 0;
@@ -169,7 +177,7 @@ MeshHandle Scene::LoadMeshData(unsigned int meshIndex, aiMesh* mesh, const aiSce
         if (material->GetTexture(aiTextureType_METALNESS, 0, &texPath) == AI_SUCCESS) {
             std::filesystem::path texturePath = baseDir / texPath.C_Str();
             texturePath = texturePath.lexically_normal();
-            meshHandle.material.metallicRoughnessTextureIndex = m_ResourceManager->AddTexture(texturePath.string(), VK_FORMAT_R8G8B8A8_UNORM);
+            meshHandle.material.metallicRoughnessTextureIndex = m_ResourceManager->AddTexture(texturePath.string(), VK_FORMAT_R8G8B8A8_SRGB);
         }
         else {
             meshHandle.material.metallicRoughnessTextureIndex = 0;

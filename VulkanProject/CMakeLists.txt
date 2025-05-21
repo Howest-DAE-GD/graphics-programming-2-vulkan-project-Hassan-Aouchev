@@ -5,7 +5,6 @@ project("VulkanProject")
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Add source to this project's executable.
 add_executable(${PROJECT_NAME} 
 
 "VulkanProject.cpp" 
@@ -55,11 +54,22 @@ FetchContent_Declare(
     GIT_TAG        master
 )
 
-# Make sure it's available
 FetchContent_MakeAvailable(stb_image)
 
 set(EXTERNAL_DIR "${CMAKE_BINARY_DIR}/external")
 file(MAKE_DIRECTORY ${EXTERNAL_DIR})
+
+
+FetchContent_Declare(
+    assimp
+    GIT_REPOSITORY https://github.com/assimp/assimp.git
+    GIT_TAG master
+    GIT_SHALLOW TRUE
+)
+set(ASSIMP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(ASSIMP_INSTALL OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(assimp)
+
 
 # Download tinyobjloader directly
 file(DOWNLOAD 
@@ -67,17 +77,6 @@ file(DOWNLOAD
     ${EXTERNAL_DIR}/tiny_obj_loader.h
     SHOW_PROGRESS
 )
-
-FetchContent_Declare(
-    assimp
-    GIT_REPOSITORY https://github.com/assimp/assimp.git
-    GIT_TAG master  # You can specify a particular commit or tag if desired
-)
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-set(ASSIMP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(ASSIMP_INJECT_DEBUG_POSTFIX OFF CACHE BOOL "" FORCE)
-set(ASSIMP_INSTALL OFF CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(assimp)
 
 # Vulkan
 find_package(Vulkan REQUIRED)

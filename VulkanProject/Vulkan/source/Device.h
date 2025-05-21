@@ -30,6 +30,7 @@ private:
 
 	void CreateLogicalDevice();
 
+	bool m_EnableValidationLayers = false;
 
 	const std::vector<const char*> m_ValidationLayers = {
 		"VK_LAYER_KHRONOS_validation"
@@ -51,7 +52,7 @@ public:
 
 	bool IsSynchronization2Supported() const { return m_Synchronization2Supported; }
 
-	Device(VkInstance instance, VkSurfaceKHR surface);
+	Device(VkInstance instance, VkSurfaceKHR surface,bool enableValidationLayer);
 	~Device() {
 		vkDestroyDevice(m_Device, nullptr);
 	}

@@ -5,6 +5,8 @@ const float PI = 3.14159265359;
 struct Light {
     vec4 position;
     vec4 color;
+    float lumen;
+    float lux;
 };
 
 layout(location = 0) in vec2 fragTexCoord;
@@ -18,7 +20,13 @@ layout(binding = 3) uniform sampler2D depthSampler;
 layout(binding = 4) uniform UniformBufferObject {
     mat4 view;
     mat4 proj;
+    ivec2 resolution;
+    vec3 cameraPosition;
 } ubo;
+
+layout(set = 0, binding = 5, std430) readonly buffer LightingBuffer {
+    Light light[];
+} lightBuffer;
 
 vec3 fresnelSchlick(float cosTheta, vec3 F0)
 {
@@ -27,7 +35,10 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0)
 
 float DistributionGGX(vec3 N, vec3 H, float roughness)
 {
-	float a = roughness * roughness;
+	float a = roughness;
+    const bool squareRoughness = false;
+    if(squareRoughness)
+    a = roughness * roughness;
 	float a2 = a * a;
 
 	float NdotH = max(dot(N, H), 0.0);
@@ -37,7 +48,7 @@ float DistributionGGX(vec3 N, vec3 H, float roughness)
 	float denom = (NdotH2 * (a2 - 1.0) + 1.0);
 	denom = PI * denom * denom;
 
-	return nom / max(denom, 0.0001);
+	return nom / denom;
 }
 
 float GeometrySchlickGGX(float NdotV, float roughness)
@@ -48,7 +59,7 @@ float GeometrySchlickGGX(float NdotV, float roughness)
 	float nom = NdotV;
 	float denom = NdotV * (1.0 - k) + k;
 
-	return nom / max(denom, 0.0001);
+	return nom / denom;
 }
 
 float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
@@ -61,75 +72,30 @@ float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
 	return ggx1 * ggx2;
 }
 
-vec3 calculateLight(Light light, vec3 lightDirection, vec3 position, vec3 normal, vec3 albedo,
-                    float metallic, float roughness, float attenuation)
+vec3 ACESFilmToneMapping(vec3 color)
 {
-    vec3 result;
-
-    vec3 N = normalize(normal);
-    vec3 L = normalize(lightDirection);
-    vec3 V = normalize(-position);
-    vec3 H = normalize(L+V);
-
-
-    vec3 F0 = vec3(0.04);
-    F0 = mix(F0, albedo, metallic);
-
-    vec3 Lo = vec3(0.0);
-    vec3 radiance = light.color.rgb * attenuation;
-
-    float NDF = DistributionGGX(N, H, roughness);
-    float G = GeometrySmith(N, V, L, roughness);
-    vec3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
-
-    vec3 Ks = F;
-    vec3 Kd = vec3(1.0) - Ks;
-    Kd *= 1.0 - metallic;
-
-    vec3 numerator = NDF * G * F;
-    float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0);
-    vec3 specular = numerator / max(denominator, 0.001);
-
-    float NdotL = max(dot(N, L), 0.0);
-    Lo += (Kd * albedo / PI + specular) * radiance * NdotL;
-
-    return Lo;
+    const float a = 2.51;
+    const float b = 0.03;
+    const float c = 2.43;
+    const float d = 0.59;
+    const float e = 0.14;
+    return clamp((color * (a * color + b)) / (color * (c * color + d) + e), 0.0, 1.0);
 }
 
-vec3 calculateDirectionalLight(Light light, vec3 position, vec3 normal, vec3 color,
-float metallic, float roughness) {
-    float attenuation = 1.0;
-    return calculateLight(light, light.position.xyz, position, normal, color, metallic, roughness,
-    attenuation);
-}
+vec3 GetWorldPositionFromDepth(float depth, ivec2 texCoord) {
 
-vec3 calculatePointLight(Light light, vec3 position, vec3 normal, vec3 color,
-float metallic, float roughness) {
-    vec3 lightDirection = light.position.xyz - position;
-    float dist = length(lightDirection);
-    float attenuation = 1.0 / (dist * dist);
-    return calculateLight(light, lightDirection, position, normal, color, metallic, roughness,
-    attenuation);
-}
+    vec2 ndc = vec2(
+         (2.0 * (texCoord.x + 0.5)) / ubo.resolution.x - 1.0,
+         (2.0 * (texCoord.y + 0.5)) / ubo.resolution.y - 1.0);
 
-vec3 getCameraPositionFromViewMatrix(mat4 viewMatrix) {
-    mat4 invView = inverse(viewMatrix);
-    return invView[3].xyz;
-}
-
-vec3 GetWorldPositionFromDepth(float depth, vec2 texCoord) {
-    // Convert to NDC
-    vec4 clipSpace;
-    clipSpace.xy = texCoord * 2.0 - 1.0;  // Convert UV to NDC
-    clipSpace.z = depth * 2.0 - 1.0;      // Convert depth to NDC
-    clipSpace.w = 1.0;
+    const vec4 clipPos = vec4(ndc,depth,1.0f);
     
     // Calculate inverse matrices
     mat4 invProj = inverse(ubo.proj);
     mat4 invView = inverse(ubo.view);
     
     // Convert to view space
-    vec4 viewSpace = invProj * clipSpace;
+    vec4 viewSpace = invProj * clipPos;
     viewSpace /= viewSpace.w;
     
     // Convert to world space
@@ -138,39 +104,92 @@ vec3 GetWorldPositionFromDepth(float depth, vec2 texCoord) {
     return worldSpace.xyz;
 }
 
+vec3 unpackNormalHighPrecision(vec4 packed) {
+
+    uint xLow = uint(packed.r * 255.0);
+    uint xHigh = uint(packed.g * 255.0);
+    uint yLow = uint(packed.b * 255.0);
+    uint yHigh = uint(packed.a * 255.0);
+    
+    float signZ = (xLow & 1u) != 0u ? -1.0 : 1.0; // i stored the sign of z in the xLow byte cause it gets lost when packing only x and y
+
+    xLow &= 0xFEu;
+    
+    uvec2 scaled = uvec2(
+        xLow | (xHigh << 8),
+        yLow | (yHigh << 8)
+    );
+    
+    vec2 normalXY = vec2(scaled) / 65535.0;
+    
+    normalXY = normalXY * 2.0 - 1.0;
+    
+    float normalZ = sqrt(max(0.0, 1.0 - dot(normalXY, normalXY)));// only positive z here
+    normalZ *= signZ;// now its negative depending on the xLow
+    
+    return normalize(vec3(normalXY, normalZ));
+}
 
 void main(){
    vec3 albedo = texture(gAlbedo, fragTexCoord).rgb;
-   vec3 normal = texture(gNormal, fragTexCoord).rgb;
+   vec4 packedNormal = texture(gNormal, fragTexCoord);
+   
+   vec3 normal = unpackNormalHighPrecision(packedNormal);
+
    vec3 pbr = texture(gPbr, fragTexCoord).rgb;
    float ao = pbr.r;
    float roughness = max(pbr.g, 0.05);
    float metallic = pbr.b;
 
-   float depth = texture(depthSampler, fragTexCoord).r;
-   vec3 worldPos = GetWorldPositionFromDepth(depth, fragTexCoord);
+   float depth = texelFetch(depthSampler, ivec2(gl_FragCoord.xy),0).r;
+   vec3 worldPos = GetWorldPositionFromDepth(depth, ivec2(gl_FragCoord.xy));
 
-   if (depth >= 0.9999) {
-       outColor = vec4(0.0, 0.0, 0.0, 1.0);
-       return;
-   }
-
-   vec3 lightColor = vec3(0.0);
-   vec3 ambientColor = vec3(0.5);
+   vec3 ambientColor = vec3(0.1);
    
    vec3 ambientLightColor = vec3(0.2f, 0.2f, 0.2f);
 
-   Light light;
-   light.position = vec4(0.f, 1.f, 0.0f, 1.0);  // Direction is negative of light direction
-   light.color = vec4(1.0, 0.0, 0.0, 1.0);
+   vec3 V = normalize(ubo.cameraPosition - worldPos);
 
-   if(light.position.w == 0.0) { // Directional light)
-       lightColor += calculateDirectionalLight(light, worldPos, normal, albedo, metallic, roughness);
+
+   vec3 Lo = vec3(0.0);
+   for (int i = 0; i < 1 ;i++){
+        vec3 L;
+        float attenuation;
+        if(lightBuffer.light[i].position.w == 1.f)
+        {
+            L = normalize(lightBuffer.light[i].position.xyz - worldPos);
+            float distance = length(lightBuffer.light[i].position.xyz - worldPos);
+            attenuation = 1.0 / (distance * distance);
+        }
+        else
+        {
+            L = normalize(lightBuffer.light[i].position.xyz);
+            attenuation = 1.0;
+        }
+        vec3 H = normalize(V+L);
+        vec3 radiance = lightBuffer.light[i].position.w == 0.f ? lightBuffer.light[i].color.rgb * lightBuffer.light[i].lux :lightBuffer.light[i].color.rgb * attenuation*(lightBuffer.light[i].lumen/(4.0*PI));
+
+        float NDF = DistributionGGX(normal, H, roughness);
+        float G = GeometrySmith(normal, V, L, roughness);
+        vec3 F = fresnelSchlick(max(dot(H, V), 0.0), vec3(0.04));
+
+        vec3 Ks = F;
+        vec3 Kd = vec3(1.0) - Ks;
+        Kd *= 1.0 - metallic;
+
+        vec3 numerator = NDF * G * F;
+        float denominator = 4.0 * max(dot(normal, V), 0.0) * max(dot(normal, L), 0.0) + 0.0001;
+        vec3 specular = numerator / denominator;
+
+        float NdotL = max(dot(normal, L), 0.0);
+        Lo += (Kd * albedo / PI + specular) * radiance * NdotL;
    }
-   else { // Point light
-       lightColor += calculatePointLight(light, worldPos, normal, albedo, metallic, roughness);
-   }
-    vec3 ambient = ambientLightColor * albedo * ao;
+
+    vec3 ambient = ambientColor * albedo * ao;
+    vec3 color = ambient + Lo;
     
-    outColor = vec4(ambient + lightColor, 1.0);
+    color = ACESFilmToneMapping(color); // testing tonemap but need to make a seperate pipeline for this but i dont wanna make another pipeline :(
+    
+    outColor = vec4(color, 1.0);
+
 }

@@ -14,16 +14,11 @@ public:
 
     MeshHandle LoadObjModel(const std::string& modelPath, const std::filesystem::path& baseDir,const aiScene* scene);
 
-    void ProcessNode(aiNode* node, const aiScene* scene);
-    void ProcessMesh(aiMesh* mesh, const aiScene* scene);
-
     const aiNode* FindMeshNode(const aiNode* node, unsigned int meshIndex);
 
     glm::mat4 GetWorldTransform(const aiNode* node);
 
     MeshHandle LoadMeshData(unsigned int meshIndex, aiMesh* mesh, const aiScene* scene, const std::filesystem::path& baseDir);
-
-    void NormalizeSceneToUnitSize();
 
 private:
     ResourceManager* m_ResourceManager;

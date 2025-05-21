@@ -10,12 +10,14 @@
 #include <string>
 #include <iostream>
 
-struct alignas(16) GpuMaterial {
-    uint32_t baseColorTextureIndex;
-    uint32_t normalTextureIndex;
-    uint32_t metallicRoughnessTextureIndex;
-    uint32_t useTextureFlags;
-
+struct GpuMaterial {
+    alignas(4) uint32_t baseColorTextureIndex;
+    alignas(4) uint32_t normalTextureIndex;
+    alignas(4) uint32_t metallicRoughnessTextureIndex;
+    alignas(4) uint32_t useTextureFlags;
+    alignas(4) uint32_t hasAlphaMask;
+    alignas(4) uint32_t alphaTextureIndex;
+    alignas(4) float alphaCutoff;
 };
 
 struct Vertex {
@@ -55,6 +57,8 @@ namespace std {
 struct UniformBufferObject {
     glm::mat4 view;
     alignas(16) glm::mat4 proj;
+    alignas(8) glm::ivec2 resolution;
+    alignas(16) glm::vec3 cameraPosition;
 };
 
 struct PushConstantData {
@@ -73,6 +77,7 @@ struct Image {
 	VkImage image;
 	VkImageLayout currentLayout;
 	VkFormat format;
+    uint32_t mipLevels = 1;
 };
 struct GBuffer {
     // G-Buffer images
@@ -97,11 +102,18 @@ struct GBuffer {
     VkSampler sampler;
 };
 
-struct LightingUBO {
-    alignas(16)glm::vec3 viewPos;
-    alignas(16)glm::vec3 lightDir;
-    alignas(16)glm::vec3 lightColor;
-    alignas(16)float ambientStrength;
+struct Texture {
+    VkImageView imageView;
+    VkSampler sampler;
+    Image image;
+    VkDeviceMemory imageMemory;
+};
+
+struct LightingSSBO {
+    alignas(16) glm::vec4 position;
+    alignas(16) glm::vec4 color;
+    alignas(4) float lumen;
+    alignas(4) float lux;
 };
 
 class Device;
@@ -112,9 +124,10 @@ class ResourceManager
 {
 private:
 
-    void CreateTextureImage(const std::string& path, VkFormat format);
-    void CreateTextureImageView();
-    void CreateTextureSampler();
+    void CreateTextureImage(const std::string& path, VkFormat format, std::vector<Texture>& textureContainer);
+    void GenerateMipmaps(VkImage image, VkFormat imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels);
+    void CreateTextureImageView(std::vector<Texture>& textureContainer);
+    void CreateTextureSampler(std::vector<Texture>& textureContainer);
     void CreateVertexBuffer();
     void CreateMaterialBuffer();
     void CreateIndexBuffer();
@@ -137,13 +150,8 @@ private:
     void CleanupGBuffer();
     void CleanupDescriptorPool();
 
-    struct Texture {
-        VkImageView imageView;
-        VkSampler sampler;
-        Image image;
-        VkDeviceMemory imageMemory;
-    };
 	std::vector<Texture> m_Textures;
+    std::vector<Texture> m_AlphaTextures;
 
     VkBuffer m_VertexBuffer;
     VkDeviceMemory m_VertexBufferMemory;
@@ -151,8 +159,8 @@ private:
     VkBuffer m_MaterialBuffer;
     VkDeviceMemory m_MaterialBufferMemory;
 
-    VkBuffer m_LightingUniformBuffer;
-    VkDeviceMemory m_LightingUniformBufferMemory;
+    VkBuffer m_LightingBuffer;
+    VkDeviceMemory m_LightingBufferMemory;
     void* m_LightingUniformBufferMapped;
 
     VkBuffer m_IndexBuffer;
@@ -163,7 +171,9 @@ private:
     std::vector<void*> m_UniformBuffersMapped;
 
     VkDescriptorPool m_DescriptorPool;
-    std::vector<VkDescriptorSet> m_DescriptorSets;
+    std::vector<VkDescriptorSet> m_UniversalDescriptorSets;
+    std::vector<VkDescriptorSet> m_GBufferDescriptorSets;
+    std::vector<VkDescriptorSet> m_DepthPrepassDescriptorSets;
 
     VkDescriptorSet m_LightingDescriptorSet;
 
@@ -178,9 +188,13 @@ private:
     std::unordered_map<std::string, uint32_t> m_TextureLookup;
     std::vector <std::pair< std::string, VkFormat >> m_TexturePaths;
 
+    std::unordered_map<std::string, uint32_t> m_AlphaTextureLookup;
+    std::vector <std::pair< std::string, VkFormat >> m_AlphaTexturePaths;
+
     std::vector<MeshHandle> m_Meshes;
     std::vector<Vertex> m_Vertices;
     std::vector<uint32_t> m_Indices;
+    std::vector<LightingSSBO> m_Lights;
 
     GBuffer m_GBuffer;
 
@@ -208,9 +222,23 @@ public:
         m_TexturePaths.push_back(std::make_pair(path,format));
         m_TextureLookup[path] = index;
         return index;
-}
+    }
+
+    int AddAlphaTexture(const std::string path, VkFormat format)
+    {
+        auto it = m_AlphaTextureLookup.find(path);
+        if (it != m_AlphaTextureLookup.end()) {
+            return it->second;
+        }
+
+        uint32_t index = static_cast<uint32_t>(m_AlphaTexturePaths.size());
+        m_AlphaTexturePaths.push_back(std::make_pair(path, format));
+        m_AlphaTextureLookup[path] = index;
+        return index;
+    }
 
     int GetTextureAmount() const { return m_TexturePaths.size(); }
+    int GetAlphaTextureAmount() const { return m_AlphaTexturePaths.size(); }
     void SetCommandManager(CommandManager* commandManager);
 
     void Create(SwapChain* swapChain, PipelineManager* pipelineManager);
@@ -222,11 +250,24 @@ public:
     void RecreateResources(SwapChain* pSwapchain,PipelineManager* pPipelineManager);
     
     std::vector<MeshHandle>& GetMeshes() { return m_Meshes; }
+    std::vector<LightingSSBO>& GetLights() { return m_Lights; }
+    void AddPointLight(glm::vec3 position, glm::vec3 color, float lumen, float lux);
+    void AddDirectionalLight(glm::vec3 direction, glm::vec3 color, float lumen, float lux);
 	std::vector<void*> GetUniformBuffersMapped() { return m_UniformBuffersMapped;}
 	VkBuffer GetVertexBuffer() const { return m_VertexBuffer;}
     VkBuffer GetMaterialBuffer() const { return m_MaterialBuffer;}
 	VkBuffer GetIndexBuffer() const { return m_IndexBuffer; }
-	std::vector<VkDescriptorSet>& GetDescriptorSets() { return m_DescriptorSets; }
+    VkDescriptorSet GetUniversalDescriptorSet(size_t frameIndex) const {
+        return m_UniversalDescriptorSets[frameIndex];
+    }
+
+    VkDescriptorSet GetGBufferDescriptorSet(size_t frameIndex) const {
+        return m_GBufferDescriptorSets[frameIndex];
+    }
+
+    VkDescriptorSet GetDepthPrepassDescriptorSet(size_t frameIndex) const {
+        return !m_DepthPrepassDescriptorSets.empty() ? m_DepthPrepassDescriptorSets[frameIndex] : VK_NULL_HANDLE;
+    }
     VkDescriptorSet& GetLightingDescriptorSet() { return m_LightingDescriptorSet; }
 
 
@@ -236,7 +277,7 @@ public:
 	std::vector<uint32_t>& GetIndices() { return m_Indices; }
 	VkImageView GetDepthImageView() const { return m_DepthImageView; }
     Image& GetDepthImage() { return m_DepthImage; }
-    VkImageView CreateImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags);
+    VkImageView CreateImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t mipLevels = 1);
     VkFormat FindSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
     VkFormat FindDepthFormat();
     void TransitionImageLayout(Image& image, VkImageLayout newLayout, VkPipelineStageFlags2 srcStageMask,
@@ -249,6 +290,8 @@ public:
                                      VkPipelineStageFlags2 dstStageMask,
                                      VkPipelineStageFlags2 dstAccessMask);
     void CreateVertexPullingBuffer();
+
+    bool HasAlphaTextures() { return !m_AlphaTextures.empty(); }
 
     void CleanDepth();
 };

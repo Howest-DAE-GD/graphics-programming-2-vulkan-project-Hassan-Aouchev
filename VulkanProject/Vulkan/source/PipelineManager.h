@@ -25,9 +25,9 @@ public:
 	PipelineManager(Device* device,ResourceManager* resourceManager, SwapChain* swapChain);
 	~PipelineManager();
 
-	VkDescriptorSetLayout GetDescriptorSetLayout() const { return m_DescriptorSetLayout; }
-	VkPipeline GetGraphicsPipeline() const { return m_ForwardPipeline; }
-	VkPipelineLayout GetPipelineLayout() const { return m_ForwardPipelineLayout; }
+	VkDescriptorSetLayout GetUniversalDescriptorSetLayout() const { return m_UniversalDescriptorSetLayout; }
+	VkDescriptorSetLayout GetGBufferDescriptorSetLayout() const { return m_GBufferDescriptorSetLayout; }
+	VkDescriptorSetLayout GetDepthPrepassDescriptorSetLayout() const { return m_DepthPrepassDescriptorSetLayout; }
 
 	void CreateDepthPrepassPipeline();
 	VkPipeline GetDepthPrepassPipeline() const { return m_DepthPrepassPipeline; }
@@ -44,17 +44,22 @@ public:
 
 
 private:
-	void CreateDescriptorSetLayout();
+	//(set 0 in both pipelines)
+	void CreateUniversalDescriptorSetLayout();
+	//(set 1 in main pipeline)  
+	void CreateGBufferDescriptorSetLayout();
+	//(set 1 in depth pipeline)
+	void CreateDepthPrepassDescriptorSetLayout();
+
 	void CreateLightingDescriptorSetLayout();
-	void CreateForwardPipeline();
 	void SavePipelineCache();
 
 	VkShaderModule CreateShaderModule(const std::vector<char>& code);
 
-	VkPipeline m_ForwardPipeline;
-	VkPipelineLayout m_ForwardPipelineLayout;
 	VkPipelineCache m_PipelineCache;
-	VkDescriptorSetLayout m_DescriptorSetLayout;
+	VkDescriptorSetLayout m_UniversalDescriptorSetLayout;
+	VkDescriptorSetLayout m_GBufferDescriptorSetLayout;
+	VkDescriptorSetLayout m_DepthPrepassDescriptorSetLayout;
 	VkPipeline m_GBufferPipeline;
 	VkPipelineLayout m_GBufferPipelineLayout;
 

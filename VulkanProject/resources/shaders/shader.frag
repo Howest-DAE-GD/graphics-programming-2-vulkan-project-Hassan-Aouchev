@@ -12,7 +12,6 @@ layout(location = 0) out vec4 outColor;
 
 layout(set = 0, binding = 3) uniform sampler2D textures[];
 
-
 void main() {
     outColor = texture(textures[fragTextureIndex],fragTexCoord);
 }

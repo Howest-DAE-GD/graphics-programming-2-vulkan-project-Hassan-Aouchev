@@ -35,25 +35,6 @@ Renderer::~Renderer()
 
 void Renderer::UpdatePushConstants(VkCommandBuffer commandBuffer)
 {
-    static auto startTime = std::chrono::high_resolution_clock::now();
-    auto currentTime = std::chrono::high_resolution_clock::now();
-    float time = std::chrono::duration<float, std::chrono::seconds::period >(currentTime - startTime).count();
-    
-    int index = 0;
-
-    for (const auto& model : m_ResourceManager->GetPushConstants())
-    {
-        vkCmdPushConstants(
-            commandBuffer,
-            m_PipelineManager->GetPipelineLayout(),
-            VK_SHADER_STAGE_VERTEX_BIT,
-            0,
-            sizeof(PushConstantData),
-            &model
-        );
-        index++;
-    }
-
 }
 
 void Renderer::UpdateUniformBuffer(uint32_t currentImage)
@@ -65,7 +46,7 @@ void Renderer::UpdateUniformBuffer(uint32_t currentImage)
     // Camera position with sinusoidal movement on the Y-axis over time
     float cameraY = 1.5f;  // Oscillate around 1000 on Y-axis
     glm::vec3 cameraPosition = glm::vec3(-4.f, cameraY, -0.3f);  // Update Y position over time
-    glm::vec3 target = glm::vec3(1.f, cameraY,-0.3f) /*glm::vec3(0.0f, 0.f - 0.1f * sin(time), 0.f)*/;  // Camera looking at the origin (adjust as needed)
+    glm::vec3 target = glm::vec3(8.f, 1.f,-0.3f) /*glm::vec3(0.0f, 0.f - 0.1f * sin(time), 0.f)*/;  // Camera looking at the origin (adjust as needed)
     glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);  // Y-axis as the "up" direction
 
     // Create the view matrix using glm::lookAt
@@ -78,8 +59,12 @@ void Renderer::UpdateUniformBuffer(uint32_t currentImage)
         glm::radians(45.0f),
         m_SwapChain->GetSwapChainExtent().width / (float)m_SwapChain->GetSwapChainExtent().height,
         0.1f,   // Near plane
-        100.0f // Far plane
+        50.0f // Far plane
     );
+
+    ubo.resolution = glm::ivec2(m_SwapChain->GetSwapChainExtent().width, m_SwapChain->GetSwapChainExtent().height);
+
+    ubo.cameraPosition = cameraPosition;
 
     ubo.proj[1][1] *= -1; // Flip Y-axis for Vulkan coordinate system
 
@@ -189,119 +174,6 @@ void Renderer::CreateSyncObjects()
         }
     }
 }
-
-void Renderer::RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex)
-{
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = 0;
-    beginInfo.pInheritanceInfo = nullptr;
-
-    if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
-        throw std::runtime_error("failed to begin recording command buffer!");
-    }
-
-    m_ResourceManager->TransitionImageLayout(m_ResourceManager->GetDepthImage(), VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                                             VK_PIPELINE_STAGE_2_NONE,
-                                             VK_ACCESS_2_NONE,
-                                             VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT,
-		                                     VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT
-    );
-
-    m_ResourceManager->TransitionImageLayout(*m_SwapChain->GetSwapChainImages()[imageIndex], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                             VK_PIPELINE_STAGE_2_NONE,
-                                             VK_ACCESS_2_NONE,        
-                                             VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                                             VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT
-    );
-
-    VkRenderingAttachmentInfo colorAttachmentInfo{};
-    colorAttachmentInfo.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    colorAttachmentInfo.imageView = m_SwapChain->GetSwapChainImageViews()[imageIndex];
-	colorAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-	colorAttachmentInfo.clearValue.color = { {0.0f, 0.0f, 0.0f, 1.0f} };
-	colorAttachmentInfo.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-	colorAttachmentInfo.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    
-    VkRenderingAttachmentInfo depthAttahcmentInfo{};
-	depthAttahcmentInfo.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-	depthAttahcmentInfo.imageView = m_ResourceManager->GetDepthImageView();
-	depthAttahcmentInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-	depthAttahcmentInfo.clearValue.depthStencil = { 1.0f, 0 };
-	depthAttahcmentInfo.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-	depthAttahcmentInfo.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-
-    auto renderArea = VkRect2D{ VkOffset2D{},m_SwapChain->GetSwapChainExtent() };
-    VkRenderingInfo renderInfo{};
-    renderInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-    renderInfo.layerCount = 1;
-    renderInfo.colorAttachmentCount = 1;
-    renderInfo.pColorAttachments = &colorAttachmentInfo;
-	renderInfo.pDepthAttachment = &depthAttahcmentInfo;
-    renderInfo.pStencilAttachment = nullptr;
-    renderInfo.renderArea = renderArea;
-
-    //renderPassInfo.
-
-
-    vkCmdBeginRendering(commandBuffer,&renderInfo);  
-
-    VkViewport viewPort{};
-    viewPort.x = 0.0f;
-    viewPort.y = 0.0f;
-    viewPort.width = static_cast<float>(m_SwapChain->GetSwapChainExtent().width);
-    viewPort.height = static_cast<float>(m_SwapChain->GetSwapChainExtent().height);
-    viewPort.minDepth = 0.0f;
-    viewPort.maxDepth = 1.0f;
-    vkCmdSetViewport(commandBuffer, 0, 1, &viewPort);
-
-    VkRect2D scissor{};
-    scissor.offset = { 0,0 };
-    scissor.extent = m_SwapChain->GetSwapChainExtent();
-    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
-
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_PipelineManager->GetGraphicsPipeline());
-
-    vkCmdBindIndexBuffer(commandBuffer, m_ResourceManager->GetIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
-
-    const auto& meshes = m_ResourceManager->GetMeshes(); // Get all meshes
-    const auto& pushConstants = m_ResourceManager->GetPushConstants(); // Get all push constants
-
-    for (size_t i = 0; i < meshes.size(); ++i) {
-        const auto& mesh = meshes[i];
-
-        if (i < pushConstants.size()) {
-            vkCmdPushConstants(
-                commandBuffer,
-                m_PipelineManager->GetPipelineLayout(),
-                VK_SHADER_STAGE_VERTEX_BIT,
-                0,
-                sizeof(PushConstantData),
-                &pushConstants[i]
-            );
-        }
-
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            m_PipelineManager->GetPipelineLayout(), 0, 1,
-            &m_ResourceManager->GetDescriptorSets()[m_CurrentFrame], 0, nullptr);
-
-        vkCmdDrawIndexed(commandBuffer, mesh.indexCount, 1, mesh.indexOffset, 0, 0);
-
-    }
-    vkCmdEndRendering(commandBuffer);
-
-    m_ResourceManager->TransitionImageLayout(*m_SwapChain->GetSwapChainImages()[imageIndex], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                                             VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                                             VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-                                             VK_PIPELINE_STAGE_2_NONE,
-                                             VK_ACCESS_2_NONE
-    );
-
-    if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
-        throw std::runtime_error("failed to record command buffer!");
-    }
-}
-
 void Renderer::RecreateSwapChain()
 {
     int width = 0, height = 0;
@@ -379,9 +251,18 @@ void Renderer::RenderDepthPrepass(VkCommandBuffer commandBuffer)
             );
         }
 
+        auto universalDescriptors = m_ResourceManager->GetUniversalDescriptorSet(m_CurrentFrame);
+        auto depthDescriptors = m_ResourceManager->GetDepthPrepassDescriptorSet(m_CurrentFrame);
+
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
             m_PipelineManager->GetDepthPrepassPipelineLayout(), 0, 1,
-            &m_ResourceManager->GetDescriptorSets()[m_CurrentFrame], 0, nullptr);
+            &universalDescriptors, 0, nullptr);
+
+        if (m_ResourceManager->HasAlphaTextures()) {
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                m_PipelineManager->GetDepthPrepassPipelineLayout(), 1, 1,
+                &depthDescriptors, 0, nullptr);
+        }
 
         vkCmdDrawIndexed(commandBuffer, mesh.indexCount, 1, mesh.indexOffset, 0, 0);
     }
@@ -461,9 +342,17 @@ void Renderer::RenderGBufferPass(VkCommandBuffer commandBuffer)
             );
         }
 
+        auto universalDescriptors = m_ResourceManager->GetUniversalDescriptorSet(m_CurrentFrame);
+        auto gBufferDescriptors = m_ResourceManager->GetGBufferDescriptorSet(m_CurrentFrame);
+
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
             m_PipelineManager->GetGBufferPipelineLayout(), 0, 1,
-            &m_ResourceManager->GetDescriptorSets()[m_CurrentFrame], 0, nullptr);
+            &universalDescriptors, 0, nullptr);
+
+        // Bind GBuffer-specific descriptor set (Set 1)
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            m_PipelineManager->GetGBufferPipelineLayout(), 1, 1,
+            &gBufferDescriptors, 0, nullptr);
 
         vkCmdDrawIndexed(commandBuffer, mesh.indexCount, 1, mesh.indexOffset, 0, 0);
     }

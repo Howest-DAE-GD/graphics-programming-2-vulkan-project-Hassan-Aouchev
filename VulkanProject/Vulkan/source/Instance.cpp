@@ -3,14 +3,9 @@
 #include <stdexcept>
 #include <iostream>
 
-#ifdef NDEBUG
-const bool enableValidationLayers = false;
-#else
-const bool enableValidationLayers = true;
-#endif
 
-
-Instance::Instance(GLFWwindow* window): m_Window(window)
+Instance::Instance(GLFWwindow* window,bool enableValidationLayer): m_Window(window),
+m_EnableValidationLayers(enableValidationLayer)
 {
     CreateInstance();
     SetupDebugMessenger();
@@ -19,7 +14,7 @@ Instance::Instance(GLFWwindow* window): m_Window(window)
 
 Instance::~Instance()
 {
-    if (enableValidationLayers) {
+    if (m_EnableValidationLayers) {
         DestroyDebugUtilsMessengerEXT(m_Instance, m_DebugMessenger, nullptr);
     }
     vkDestroySurfaceKHR(m_Instance, m_Surface, nullptr);
@@ -28,7 +23,7 @@ Instance::~Instance()
 
 void Instance::CreateInstance()
 {
-    if (enableValidationLayers && !CheckValidationLayerSupport()) {
+    if (m_EnableValidationLayers && !CheckValidationLayerSupport()) {
         throw std::runtime_error("validation layers requested, but not available!");
     }
 
@@ -49,7 +44,7 @@ void Instance::CreateInstance()
     createInfo.ppEnabledExtensionNames = extensions.data();
 
     VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
-    if (enableValidationLayers) {
+    if (m_EnableValidationLayers) {
         createInfo.enabledLayerCount = static_cast<uint32_t>(m_ValidationLayers.size());
         createInfo.ppEnabledLayerNames = m_ValidationLayers.data();
 
@@ -69,7 +64,7 @@ void Instance::CreateInstance()
 
 void Instance::SetupDebugMessenger()
 {
-	if (!enableValidationLayers) return;
+	if (!m_EnableValidationLayers) return;
 
 	VkDebugUtilsMessengerCreateInfoEXT createInfo;
 	PopulateDebugMessengerCreateInfo(createInfo);
@@ -94,7 +89,7 @@ std::vector<const char*> Instance::GetRequiredExtensions()
 
     std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
 
-    if (enableValidationLayers) {
+    if (m_EnableValidationLayers) {
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
 

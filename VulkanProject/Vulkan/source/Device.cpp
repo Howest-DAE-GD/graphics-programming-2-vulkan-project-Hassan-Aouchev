@@ -4,11 +4,6 @@
 #include <set>
 #include <iostream>
 
-#ifdef NDEBUG
-const bool enableValidationLayers = false;
-#else
-const bool enableValidationLayers = true;
-#endif
 
 void Device::PickPhysicalDevice(VkInstance instance)
 {
@@ -169,7 +164,7 @@ void Device::CreateLogicalDevice()
     createInfo.enabledExtensionCount = static_cast<uint32_t>(m_DeviceExtensions.size());
     createInfo.ppEnabledExtensionNames = m_DeviceExtensions.data();
 
-    if (enableValidationLayers) {
+    if (m_EnableValidationLayers) {
         createInfo.enabledLayerCount = static_cast<uint32_t>(m_ValidationLayers.size());
         createInfo.ppEnabledLayerNames = m_ValidationLayers.data();
     }
@@ -210,7 +205,8 @@ SwapChainSupportDetails Device::QuerySwapChainSupport(VkPhysicalDevice device)
     return details;
 }
 
-Device::Device(VkInstance instance, VkSurfaceKHR surface) : m_Surface(surface)
+Device::Device(VkInstance instance, VkSurfaceKHR surface,bool enableValidationLayer) : m_Surface(surface),
+m_EnableValidationLayers(enableValidationLayer)
 {
 	PickPhysicalDevice(instance);
     CreateLogicalDevice();
