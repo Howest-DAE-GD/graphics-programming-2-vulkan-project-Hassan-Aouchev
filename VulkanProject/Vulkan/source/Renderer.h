@@ -31,7 +31,8 @@ private:
 
 	void RenderDepthPrepass(VkCommandBuffer commandBuffer);
 	void RenderGBufferPass(VkCommandBuffer commandBuffer);
-	void RenderLightingPass(VkCommandBuffer commandBuffer, uint32_t imageIndex);
+	void RenderLightingPass(VkCommandBuffer commandBuffer);
+	void RenderToneMapping(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 	void RecordDeferredCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 
 	std::vector<VkSemaphore> m_ImageAvailableSemaphores;

@@ -361,11 +361,11 @@ void Renderer::RenderGBufferPass(VkCommandBuffer commandBuffer)
 
 }
 
-void Renderer::RenderLightingPass(VkCommandBuffer commandBuffer, uint32_t imageIndex)
+void Renderer::RenderLightingPass(VkCommandBuffer commandBuffer)
 {
     VkRenderingAttachmentInfo colorAttachmentInfo{};
     colorAttachmentInfo.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    colorAttachmentInfo.imageView = m_SwapChain->GetSwapChainImageViews()[imageIndex];
+    colorAttachmentInfo.imageView = m_ResourceManager->GetHdrBuffer().imageView;
     colorAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     colorAttachmentInfo.clearValue.color = { {0.0f, 0.0f, 0.0f, 1.0f} };
     colorAttachmentInfo.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
@@ -401,6 +401,52 @@ void Renderer::RenderLightingPass(VkCommandBuffer commandBuffer, uint32_t imageI
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
         m_PipelineManager->GetLightingPipelineLayout(), 0, 1,
         &m_ResourceManager->GetLightingDescriptorSet(), 0, nullptr);
+
+    vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+
+    vkCmdEndRendering(commandBuffer);
+}
+
+void Renderer::RenderToneMapping(VkCommandBuffer commandBuffer, uint32_t imageIndex)
+{
+    VkRenderingAttachmentInfo colorAttachmentInfo{};
+    colorAttachmentInfo.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    colorAttachmentInfo.imageView = m_SwapChain->GetSwapChainImageViews()[imageIndex];
+    colorAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachmentInfo.clearValue.color = { {0.0f, 0.0f, 0.0f, 1.0f} };
+    colorAttachmentInfo.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachmentInfo.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+
+    auto renderArea = VkRect2D{ VkOffset2D{},m_SwapChain->GetSwapChainExtent() };
+    VkRenderingInfo renderInfo{};
+    renderInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+    renderInfo.layerCount = 1;
+    renderInfo.colorAttachmentCount = 1;
+    renderInfo.pColorAttachments = &colorAttachmentInfo;
+    renderInfo.pDepthAttachment = nullptr;
+    renderInfo.pStencilAttachment = nullptr;
+    renderInfo.renderArea = renderArea;
+
+    vkCmdBeginRendering(commandBuffer, &renderInfo);
+
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<float>(m_SwapChain->GetSwapChainExtent().width);
+    viewport.height = static_cast<float>(m_SwapChain->GetSwapChainExtent().height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = { 0, 0 };
+    scissor.extent = m_SwapChain->GetSwapChainExtent();
+    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_PipelineManager->GetToneMappingPipeline());
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        m_PipelineManager->GetToneMappingPipelineLayout(), 0, 1,
+        &m_ResourceManager->GetToneMappingDescriptorSet(), 0, nullptr);
 
     vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 
@@ -489,15 +535,6 @@ void Renderer::RecordDeferredCommandBuffer(VkCommandBuffer commandBuffer, uint32
         VK_ACCESS_2_SHADER_READ_BIT
     );
 
-
-    m_ResourceManager->TransitionImageLayout(*m_SwapChain->GetSwapChainImages()[imageIndex], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-        VK_PIPELINE_STAGE_2_NONE,
-        VK_ACCESS_2_NONE,
-        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-        VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT
-    );
-
-
     m_ResourceManager->TransitionImageLayoutInline(
         commandBuffer,
         m_ResourceManager->GetDepthImage(),
@@ -508,13 +545,42 @@ void Renderer::RecordDeferredCommandBuffer(VkCommandBuffer commandBuffer, uint32
         VK_ACCESS_2_SHADER_READ_BIT
     );
 
-    RenderLightingPass(commandBuffer, imageIndex);
+    m_ResourceManager->TransitionImageLayoutInline(
+        commandBuffer,
+        m_ResourceManager->GetHdrBuffer().image,
+        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        VK_PIPELINE_STAGE_2_NONE,
+        VK_ACCESS_2_NONE,
+        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT
+    );
+
+    RenderLightingPass(commandBuffer);
+
+    m_ResourceManager->TransitionImageLayoutInline(
+        commandBuffer,
+        m_ResourceManager->GetHdrBuffer().image,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+        VK_ACCESS_2_SHADER_READ_BIT
+    );
+
+    m_ResourceManager->TransitionImageLayout(*m_SwapChain->GetSwapChainImages()[imageIndex], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        VK_PIPELINE_STAGE_2_NONE,
+        VK_ACCESS_2_NONE,
+        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT
+    );
+
+    RenderToneMapping(commandBuffer, imageIndex);
 
     m_ResourceManager->TransitionImageLayout(*m_SwapChain->GetSwapChainImages()[imageIndex], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                                             VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                                             VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-                                             VK_PIPELINE_STAGE_2_NONE,
-                                             VK_ACCESS_2_NONE
+        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_NONE,
+        VK_ACCESS_2_NONE
     );
 
     if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {

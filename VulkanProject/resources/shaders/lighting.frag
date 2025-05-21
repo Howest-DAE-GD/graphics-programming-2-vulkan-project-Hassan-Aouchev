@@ -188,7 +188,7 @@ void main(){
     vec3 ambient = ambientColor * albedo * ao;
     vec3 color = ambient + Lo;
     
-    color = ACESFilmToneMapping(color); // testing tonemap but need to make a seperate pipeline for this but i dont wanna make another pipeline :(
+    //color = ACESFilmToneMapping(color); // testing tonemap but need to make a seperate pipeline for this but i dont wanna make another pipeline :(
     
     outColor = vec4(color, 1.0);
 

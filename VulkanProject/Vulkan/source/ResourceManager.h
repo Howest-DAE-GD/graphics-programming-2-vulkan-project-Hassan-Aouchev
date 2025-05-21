@@ -134,8 +134,10 @@ private:
     void CreateUniformBuffers();
     void CreateLightingUniformBuffer();
     void CreateGBuffer(VkExtent2D extent);
+    void CreateHdrBuffer(VkExtent2D extent);
     void CreateDescriptorSets(PipelineManager* pipelineManager);
     void CreateLightingDescriptorSet(PipelineManager* pipelineManager);
+    void CreateToneMappingDescriptorSet(PipelineManager* pipelineManager);
     void CreateDescriptorPools();
     void CreateDepthResources(SwapChain* swapChain);
 
@@ -177,6 +179,8 @@ private:
 
     VkDescriptorSet m_LightingDescriptorSet;
 
+    VkDescriptorSet m_ToneMappingDescriptorSet;
+
 	Device* m_Device;
 	CommandManager* m_CommandManager;
 
@@ -197,6 +201,7 @@ private:
     std::vector<LightingSSBO> m_Lights;
 
     GBuffer m_GBuffer;
+    Texture m_HdrBuffer;
 
     const int MAX_FRAMES_IN_FLIGHT = 2;
 public:
@@ -206,6 +211,8 @@ public:
 
 
     GBuffer& GetGBuffer() { return m_GBuffer; }
+
+    Texture& GetHdrBuffer() { return m_HdrBuffer; }
 
     void AddModel(MeshHandle meshHandle,int meshIndex) { 
 		MeshHandle newMeshHandle = meshHandle;
@@ -270,6 +277,7 @@ public:
     }
     VkDescriptorSet& GetLightingDescriptorSet() { return m_LightingDescriptorSet; }
 
+    VkDescriptorSet& GetToneMappingDescriptorSet() { return m_ToneMappingDescriptorSet; }
 
     std::vector<PushConstantData>& GetPushConstants() { return m_PushConstants; }
 

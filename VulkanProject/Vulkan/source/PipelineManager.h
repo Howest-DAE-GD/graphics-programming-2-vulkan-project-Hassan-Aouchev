@@ -42,6 +42,10 @@ public:
 	VkPipeline GetLightingPipeline() const { return m_LightingPipeline; }
 	VkPipelineLayout GetLightingPipelineLayout() const { return m_LightingPipelineLayout; }
 
+	void CreateToneMappingPipeline();
+	VkDescriptorSetLayout& GetToneMappingDescriptorSetLayout() { return m_ToneMappingDescriptorSetLayout; }
+	VkPipeline GetToneMappingPipeline() const { return m_ToneMappingPipeline; }
+	VkPipelineLayout GetToneMappingPipelineLayout() const { return m_ToneMappingPipelineLayout; }
 
 private:
 	//(set 0 in both pipelines)
@@ -50,6 +54,8 @@ private:
 	void CreateGBufferDescriptorSetLayout();
 	//(set 1 in depth pipeline)
 	void CreateDepthPrepassDescriptorSetLayout();
+
+	void CreateToneMappingDescriptorSetLayout();
 
 	void CreateLightingDescriptorSetLayout();
 	void SavePipelineCache();
@@ -66,6 +72,10 @@ private:
 	VkDescriptorSetLayout m_LightingDescriptorSetLayout;
 	VkPipeline m_LightingPipeline;
 	VkPipelineLayout m_LightingPipelineLayout;
+
+	VkDescriptorSetLayout m_ToneMappingDescriptorSetLayout;
+	VkPipeline m_ToneMappingPipeline;
+	VkPipelineLayout m_ToneMappingPipelineLayout;
 
 	VkPipeline m_DepthPrepassPipeline;
 	VkPipelineLayout m_DepthPrepassPipelineLayout;

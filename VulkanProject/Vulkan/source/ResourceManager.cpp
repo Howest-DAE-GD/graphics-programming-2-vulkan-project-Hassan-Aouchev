@@ -342,7 +342,7 @@ void ResourceManager::CreateDescriptorPools() {
     poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
     poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
     poolInfo.pPoolSizes = poolSizes.data();
-    poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT + 5);
+    poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT + 6);
     
     if (vkCreateDescriptorPool(m_Device->GetDevice(), &poolInfo, nullptr, &m_DescriptorPool) != VK_SUCCESS) {
         throw std::runtime_error("failed to create descriptor pool!");
@@ -511,7 +511,6 @@ void ResourceManager::CreateDescriptorSets(PipelineManager* pipelineManager) {
 
 void ResourceManager::CreateLightingDescriptorSet(PipelineManager* pipelineManager)
 {
-
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     allocInfo.descriptorPool = m_DescriptorPool;
@@ -604,14 +603,53 @@ void ResourceManager::CreateLightingDescriptorSet(PipelineManager* pipelineManag
     vkUpdateDescriptorSets(m_Device->GetDevice(), static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 }
 
+void ResourceManager::CreateToneMappingDescriptorSet(PipelineManager* pipelineManager)
+{
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = m_DescriptorPool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &pipelineManager->GetToneMappingDescriptorSetLayout();
+
+    if (vkAllocateDescriptorSets(m_Device->GetDevice(), &allocInfo, &m_ToneMappingDescriptorSet) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to allocate tone mapping  descriptor set!");
+    }
+
+    std::array<VkWriteDescriptorSet, 1> descriptorWrites{};
+
+    VkDescriptorImageInfo hdrInfo{};
+    hdrInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    hdrInfo.imageView = m_HdrBuffer.imageView;
+    hdrInfo.sampler = m_HdrBuffer.sampler;
+
+    descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrites[0].dstSet = m_ToneMappingDescriptorSet;
+    descriptorWrites[0].dstBinding = 0;
+    descriptorWrites[0].dstArrayElement = 0;
+    descriptorWrites[0].descriptorCount = 1;
+    descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorWrites[0].pImageInfo = &hdrInfo;
+
+    vkUpdateDescriptorSets(m_Device->GetDevice(), static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+}
+
 void ResourceManager::RecreateResources(SwapChain* pSwapchain, PipelineManager* pPipelineManager)
 {
     CleanDepth();
     CleanupGBuffer();
 
+    vkDestroySampler(m_Device->GetDevice(), m_HdrBuffer.sampler, nullptr);
+
+    //hdr cleanup
+    vkDestroyImageView(m_Device->GetDevice(), m_HdrBuffer.imageView, nullptr);
+    vkDestroyImage(m_Device->GetDevice(), m_HdrBuffer.image.image, nullptr);
+    vkFreeMemory(m_Device->GetDevice(), m_HdrBuffer.imageMemory, nullptr);
+
     CreateDepthResources(pSwapchain);
 
     CreateGBuffer(pSwapchain->GetSwapChainExtent());
+
+    CreateHdrBuffer(pSwapchain->GetSwapChainExtent());
 
     CleanupDescriptorPool();
 
@@ -619,6 +657,7 @@ void ResourceManager::RecreateResources(SwapChain* pSwapchain, PipelineManager* 
 
     CreateDescriptorSets(pPipelineManager);
     CreateLightingDescriptorSet(pPipelineManager);
+    CreateToneMappingDescriptorSet(pPipelineManager);
 }
 
 void ResourceManager::AddPointLight(glm::vec3 position, glm::vec3 color, float lumen, float lux)
@@ -697,6 +736,41 @@ void ResourceManager::CreateGBuffer(VkExtent2D extent)
     {
         throw std::runtime_error("failed to create G-Buffer sampler!");
     }
+}
+
+void ResourceManager::CreateHdrBuffer(VkExtent2D extent)
+{
+    m_HdrBuffer.image.format = VK_FORMAT_R32G32B32A32_SFLOAT;
+    CreateImage(extent.width, extent.height,
+        m_HdrBuffer.image.format,
+        VK_IMAGE_TILING_OPTIMAL,
+        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        m_HdrBuffer.image, m_HdrBuffer.imageMemory);
+
+    m_HdrBuffer.imageView = CreateImageView(m_HdrBuffer.image.image,
+        m_HdrBuffer.image.format,
+        VK_IMAGE_ASPECT_COLOR_BIT);
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.magFilter = VK_FILTER_LINEAR;
+    samplerInfo.minFilter = VK_FILTER_LINEAR;
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.anisotropyEnable = VK_FALSE;
+    samplerInfo.maxAnisotropy = 1.0f;
+    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+    samplerInfo.unnormalizedCoordinates = VK_FALSE;
+    samplerInfo.compareEnable = VK_FALSE;
+    samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+
+    if (vkCreateSampler(m_Device->GetDevice(), &samplerInfo, nullptr, &m_HdrBuffer.sampler) != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to create Hdr sampler!");
+    }
+
 }
 
 void ResourceManager::CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height)
@@ -885,6 +959,11 @@ ResourceManager::~ResourceManager()
     vkFreeMemory(m_Device->GetDevice(), m_LightingBufferMemory, nullptr);
 
     CleanupGBuffer();
+
+    vkDestroySampler(m_Device->GetDevice(), m_HdrBuffer.sampler, nullptr);
+    vkDestroyImageView(m_Device->GetDevice(), m_HdrBuffer.imageView, nullptr);
+    vkDestroyImage(m_Device->GetDevice(), m_HdrBuffer.image.image, nullptr);
+    vkFreeMemory(m_Device->GetDevice(), m_HdrBuffer.imageMemory, nullptr);
 }
 
 void ResourceManager::CleanDepth()
@@ -904,6 +983,8 @@ void ResourceManager::Create(SwapChain* swapChain, PipelineManager* pipelineMana
     CreateDepthResources(swapChain);
 
     CreateGBuffer(swapChain->GetSwapChainExtent());
+
+    CreateHdrBuffer(swapChain->GetSwapChainExtent());
 
     int textureAmount{ 0 };
 
@@ -940,6 +1021,7 @@ void ResourceManager::Create(SwapChain* swapChain, PipelineManager* pipelineMana
 	CreateDescriptorPools();
     CreateDescriptorSets(pipelineManager);
     CreateLightingDescriptorSet(pipelineManager);
+    CreateToneMappingDescriptorSet(pipelineManager);
 }
 
 void ResourceManager::CleanupDescriptorPool()
