@@ -2,6 +2,7 @@
 #include <vulkan/vulkan.h>
 #include <vector>
 
+class CameraManager;
 class Device;
 class PipelineManager;
 class SwapChain;
@@ -15,25 +16,25 @@ public:
 	~Renderer();
 
 	void UpdatePushConstants(VkCommandBuffer commandBuffer);
-	void UpdateUniformBuffer(uint32_t currentImage);
+	float UpdateUniformBuffer(uint32_t currentImage);
 	void DrawFrame();
 	void CreateSyncObjects();
 	void RecreateSwapChain();
 
-private:
+	void SetCamera(CameraManager* camera) { m_Camera = camera; }
 
 	static void framebufferResizeCallback(GLFWwindow* window, int width, int height) {
 		auto app = reinterpret_cast<Renderer*>(glfwGetWindowUserPointer(window));
 		app->m_FramebufferResized = true;
 	}
+private:
 
-	void RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 
 	void RenderDepthPrepass(VkCommandBuffer commandBuffer);
 	void RenderGBufferPass(VkCommandBuffer commandBuffer);
 	void RenderLightingPass(VkCommandBuffer commandBuffer);
-	void RenderToneMapping(VkCommandBuffer commandBuffer, uint32_t imageIndex);
-	void RecordDeferredCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
+	void RenderToneMapping(VkCommandBuffer commandBuffer, uint32_t imageIndex, float deltaTime);
+	void RecordDeferredCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex, float deltaTime);
 
 	std::vector<VkSemaphore> m_ImageAvailableSemaphores;
 	std::vector<VkSemaphore> m_RenderFinishedSemaphores;
@@ -49,4 +50,6 @@ private:
 	CommandManager* m_CommandManager;
 	ResourceManager* m_ResourceManager;
 	Instance* m_Instance;
+	CameraManager* m_Camera = nullptr;
+	float m_LastFrameTime = 0.0f;
 };

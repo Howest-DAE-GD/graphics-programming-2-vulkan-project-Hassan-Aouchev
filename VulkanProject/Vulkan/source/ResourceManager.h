@@ -58,7 +58,7 @@ struct UniformBufferObject {
     glm::mat4 view;
     alignas(16) glm::mat4 proj;
     alignas(8) glm::ivec2 resolution;
-    alignas(16) glm::vec3 cameraPosition;
+    alignas(16) glm::vec3 CameraManagerPosition;
 };
 
 struct PushConstantData {
@@ -78,6 +78,7 @@ struct Image {
 	VkImageLayout currentLayout;
 	VkFormat format;
     uint32_t mipLevels = 1;
+    VkExtent2D extent;
 };
 struct GBuffer {
     // G-Buffer images
@@ -145,9 +146,7 @@ private:
 
     void CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
     void CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
-    void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);
     void CreateImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, Image& image, VkDeviceMemory& imageMemory);
-    uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
     void CleanupGBuffer();
     void CleanupDescriptorPool();
@@ -214,6 +213,8 @@ public:
 
     Texture& GetHdrBuffer() { return m_HdrBuffer; }
 
+    VkDescriptorPool GetDescriptorPool() { return m_DescriptorPool; }
+
     void AddModel(MeshHandle meshHandle,int meshIndex) { 
 		MeshHandle newMeshHandle = meshHandle;
         m_Meshes.push_back(meshHandle);
@@ -249,6 +250,7 @@ public:
     void SetCommandManager(CommandManager* commandManager);
 
     void Create(SwapChain* swapChain, PipelineManager* pipelineManager);
+    void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);
 
 	void SetModelMatrix(const glm::mat4& model,int index) {
 		m_PushConstants[index].model = model;
@@ -302,4 +304,6 @@ public:
     bool HasAlphaTextures() { return !m_AlphaTextures.empty(); }
 
     void CleanDepth();
+
+    uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 };

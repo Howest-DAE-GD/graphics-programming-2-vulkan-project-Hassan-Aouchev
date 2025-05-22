@@ -5,7 +5,7 @@ layout(set = 0, binding = 0) uniform UniformBufferObject {
     mat4 view;
     mat4 proj;
     ivec2 resolution;
-    vec3 cameraPosition;
+    vec3 CameraManagerPosition;
 } ubo;
 
 struct Vertex {

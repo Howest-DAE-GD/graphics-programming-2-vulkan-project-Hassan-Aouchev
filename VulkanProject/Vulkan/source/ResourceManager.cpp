@@ -342,7 +342,7 @@ void ResourceManager::CreateDescriptorPools() {
     poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
     poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
     poolInfo.pPoolSizes = poolSizes.data();
-    poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT + 6);
+    poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT + 8);
     
     if (vkCreateDescriptorPool(m_Device->GetDevice(), &poolInfo, nullptr, &m_DescriptorPool) != VK_SUCCESS) {
         throw std::runtime_error("failed to create descriptor pool!");
@@ -747,6 +747,8 @@ void ResourceManager::CreateHdrBuffer(VkExtent2D extent)
         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
         m_HdrBuffer.image, m_HdrBuffer.imageMemory);
+
+    m_HdrBuffer.image.extent = extent;
 
     m_HdrBuffer.imageView = CreateImageView(m_HdrBuffer.image.image,
         m_HdrBuffer.image.format,

@@ -21,7 +21,7 @@ layout(binding = 4) uniform UniformBufferObject {
     mat4 view;
     mat4 proj;
     ivec2 resolution;
-    vec3 cameraPosition;
+    vec3 CameraManagerPosition;
 } ubo;
 
 layout(set = 0, binding = 5, std430) readonly buffer LightingBuffer {
@@ -138,7 +138,7 @@ void main(){
    
    vec3 ambientLightColor = vec3(0.2f, 0.2f, 0.2f);
 
-   vec3 V = normalize(ubo.cameraPosition - worldPos);
+   vec3 V = normalize(ubo.CameraManagerPosition - worldPos);
 
 
    vec3 Lo = vec3(0.0);

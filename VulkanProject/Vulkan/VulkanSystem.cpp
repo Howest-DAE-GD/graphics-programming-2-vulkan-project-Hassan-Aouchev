@@ -7,6 +7,8 @@
 #include "source/CommandManager.h"
 #include "source/Renderer.h"
 #include "source/Scene.h"
+#include "../Window/CameraManager.h"
+#include "../Window/InputManager.h"
 #include <iostream>
 #include <stdexcept>
 #include <cstring>
@@ -56,6 +58,12 @@ bool VulkanSystem::Initialize(WindowManager* windowManager) {
         m_ResourceManager->Create(m_SwapChain, m_PipelineManager);
         m_CommandManager->CreateCommandBuffers();
         m_Renderer->CreateSyncObjects();
+
+        m_Camera = new CameraManager(glm::vec3(-4.0f, 1.5f, -0.3f)); // Start at your current camera position
+        m_Renderer->SetCamera(m_Camera);
+
+        InputManager::Instance().Initialize(windowManager->GetWindow());
+        InputManager::Instance().SetCamera(m_Camera);
 
         return true;
     }
@@ -226,4 +234,7 @@ void VulkanSystem::Cleanup() {
     m_Scene = nullptr;
     m_PhysicalDevice = nullptr;
     m_Instance = nullptr;
+    
+    delete m_Camera;
+    m_Camera = nullptr;
 }

@@ -10,6 +10,9 @@
 #include <chrono>
 #include <GLFW/glfw3.h>
 #include <algorithm>
+#include "../../Window/InputManager.h"
+#include "../../Window/CameraManager.h"
+
 
 Renderer::Renderer(Device* device, PipelineManager* pipelineManager,
                     SwapChain* swapChain, CommandManager* commandManager,
@@ -31,50 +34,56 @@ Renderer::~Renderer()
         vkDestroySemaphore(m_Device->GetDevice(), m_RenderFinishedSemaphores[i], nullptr);
         vkDestroyFence(m_Device->GetDevice(), m_InFlightFences[i], nullptr);
     }
+
 }
 
 void Renderer::UpdatePushConstants(VkCommandBuffer commandBuffer)
 {
 }
 
-void Renderer::UpdateUniformBuffer(uint32_t currentImage)
+float Renderer::UpdateUniformBuffer(uint32_t currentImage)
 {
-    static auto startTime = std::chrono::high_resolution_clock::now();
-    auto currentTime = std::chrono::high_resolution_clock::now();
-    float time = std::chrono::duration<float, std::chrono::seconds::period >(currentTime - startTime).count();
+    // Calculate delta time
+    float currentTime = glfwGetTime();
+    float deltaTime = currentTime - m_LastFrameTime;
+    m_LastFrameTime = currentTime;
 
-    // Camera position with sinusoidal movement on the Y-axis over time
-    float cameraY = 1.5f;  // Oscillate around 1000 on Y-axis
-    glm::vec3 cameraPosition = glm::vec3(-4.f, cameraY, -0.3f);  // Update Y position over time
-    glm::vec3 target = glm::vec3(8.f, 1.f,-0.3f) /*glm::vec3(0.0f, 0.f - 0.1f * sin(time), 0.f)*/;  // Camera looking at the origin (adjust as needed)
-    glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);  // Y-axis as the "up" direction
+    // Update input
+    InputManager::Instance().Update(deltaTime);
 
-    // Create the view matrix using glm::lookAt
-    glm::mat4 viewMatrix = glm::lookAt(cameraPosition, target, up);
-
-    // Prepare the uniform buffer object
     UniformBufferObject ubo{};
-    ubo.view = viewMatrix;
+
+    if (m_Camera) {
+        // Use camera for view matrix and position
+        ubo.view = m_Camera->GetViewMatrix();
+        ubo.CameraManagerPosition = m_Camera->GetPosition();
+    }
+    else {
+        // Fallback to your original hardcoded camera
+        glm::vec3 cameraPosition = glm::vec3(-4.f, 1.5f, -0.3f);
+        glm::vec3 target = cameraPosition + glm::vec3(1.f, 0.f, -0.0f);
+        glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);
+        ubo.view = glm::lookAt(cameraPosition, target, up);
+        ubo.CameraManagerPosition = cameraPosition;
+    }
+
     ubo.proj = glm::perspective(
         glm::radians(45.0f),
         m_SwapChain->GetSwapChainExtent().width / (float)m_SwapChain->GetSwapChainExtent().height,
-        0.1f,   // Near plane
-        50.0f // Far plane
+        0.1f,
+        50.0f
     );
 
     ubo.resolution = glm::ivec2(m_SwapChain->GetSwapChainExtent().width, m_SwapChain->GetSwapChainExtent().height);
-
-    ubo.cameraPosition = cameraPosition;
-
     ubo.proj[1][1] *= -1; // Flip Y-axis for Vulkan coordinate system
 
-
-
-    // Copy the updated uniform data to the buffer
     memcpy(m_ResourceManager->GetUniformBuffersMapped()[currentImage], &ubo, sizeof(ubo));
+
+    return deltaTime;
 }
 void Renderer::DrawFrame()
 {
+
     vkWaitForFences(m_Device->GetDevice(), 1, &m_InFlightFences[m_CurrentFrame], VK_TRUE, UINT64_MAX);
     uint32_t imageIndex;
     VkResult result = vkAcquireNextImageKHR(m_Device->GetDevice(), m_SwapChain->GetSwapChain(), UINT64_MAX, m_ImageAvailableSemaphores[m_CurrentFrame], VK_NULL_HANDLE, &imageIndex);
@@ -90,9 +99,9 @@ void Renderer::DrawFrame()
     vkResetFences(m_Device->GetDevice(), 1, &m_InFlightFences[m_CurrentFrame]);
     vkResetCommandBuffer(m_CommandManager->GetCommandBuffers()[m_CurrentFrame], 0);
 
-    UpdateUniformBuffer(m_CurrentFrame);
+    float deltaTime = UpdateUniformBuffer(m_CurrentFrame);
 
-    RecordDeferredCommandBuffer(m_CommandManager->GetCommandBuffers()[m_CurrentFrame], imageIndex);
+    RecordDeferredCommandBuffer(m_CommandManager->GetCommandBuffers()[m_CurrentFrame], imageIndex, deltaTime);
 
 	VkCommandBufferSubmitInfo cmdBufferSubmitInfo{};
 	cmdBufferSubmitInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
@@ -173,6 +182,7 @@ void Renderer::CreateSyncObjects()
             throw std::runtime_error("failed to create semaphores");
         }
     }
+
 }
 void Renderer::RecreateSwapChain()
 {
@@ -187,9 +197,11 @@ void Renderer::RecreateSwapChain()
 
     m_SwapChain->CleanupSwapchain();
 
+
     m_SwapChain->CreateSwapChain();
     m_SwapChain->CreateImageViews();
     m_ResourceManager->RecreateResources(m_SwapChain,m_PipelineManager);
+
 }
 
 void Renderer::RenderDepthPrepass(VkCommandBuffer commandBuffer)
@@ -407,8 +419,9 @@ void Renderer::RenderLightingPass(VkCommandBuffer commandBuffer)
     vkCmdEndRendering(commandBuffer);
 }
 
-void Renderer::RenderToneMapping(VkCommandBuffer commandBuffer, uint32_t imageIndex)
+void Renderer::RenderToneMapping(VkCommandBuffer commandBuffer, uint32_t imageIndex,float deltaTime)
 {
+
     VkRenderingAttachmentInfo colorAttachmentInfo{};
     colorAttachmentInfo.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
     colorAttachmentInfo.imageView = m_SwapChain->GetSwapChainImageViews()[imageIndex];
@@ -443,6 +456,17 @@ void Renderer::RenderToneMapping(VkCommandBuffer commandBuffer, uint32_t imageIn
     scissor.extent = m_SwapChain->GetSwapChainExtent();
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
+    TonemappingPushConstants pushConstants;
+    pushConstants.averageLuminance = 1.4;
+    pushConstants.exposureMode = 1;
+
+    vkCmdPushConstants(commandBuffer,
+        m_PipelineManager->GetToneMappingPipelineLayout(),
+        VK_SHADER_STAGE_FRAGMENT_BIT,
+        0,
+        sizeof(TonemappingPushConstants),
+        &pushConstants);
+
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_PipelineManager->GetToneMappingPipeline());
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
         m_PipelineManager->GetToneMappingPipelineLayout(), 0, 1,
@@ -453,7 +477,7 @@ void Renderer::RenderToneMapping(VkCommandBuffer commandBuffer, uint32_t imageIn
     vkCmdEndRendering(commandBuffer);
 }
 
-void Renderer::RecordDeferredCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex)
+void Renderer::RecordDeferredCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex, float deltaTime)
 {
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -555,6 +579,7 @@ void Renderer::RecordDeferredCommandBuffer(VkCommandBuffer commandBuffer, uint32
         VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT
     );
 
+
     RenderLightingPass(commandBuffer);
 
     m_ResourceManager->TransitionImageLayoutInline(
@@ -563,7 +588,7 @@ void Renderer::RecordDeferredCommandBuffer(VkCommandBuffer commandBuffer, uint32
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
         VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
         VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-        VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+        VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
         VK_ACCESS_2_SHADER_READ_BIT
     );
 
@@ -574,7 +599,7 @@ void Renderer::RecordDeferredCommandBuffer(VkCommandBuffer commandBuffer, uint32
         VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT
     );
 
-    RenderToneMapping(commandBuffer, imageIndex);
+    RenderToneMapping(commandBuffer, imageIndex,deltaTime);
 
     m_ResourceManager->TransitionImageLayout(*m_SwapChain->GetSwapChainImages()[imageIndex], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
         VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,

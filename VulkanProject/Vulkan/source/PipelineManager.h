@@ -3,16 +3,28 @@
 #include <fstream>
 #include <vector>
 
-static std::vector<char> readFile(const std::string& filename) {
-	std::ifstream file(filename, std::ios::ate | std::ios::binary);
+struct TonemappingPushConstants {
+	float averageLuminance;
+	int exposureMode;
+};
 
+static std::vector<uint32_t> readFile(const std::string& filename) {
+	std::ifstream file(filename, std::ios::ate | std::ios::binary);
 	if (!file.is_open()) {
-		throw std::runtime_error("failed to open file!");
+		throw std::runtime_error("failed to open file: " + filename);
 	}
+
 	size_t fileSize = (size_t)file.tellg();
-	std::vector<char> buffer(fileSize);
+	// Ensure the size is a multiple of 4 (uint32_t size)
+	if (fileSize % 4 != 0) {
+		throw std::runtime_error("SPIR-V file size is not a multiple of 4: " + filename);
+	}
+
+	// Create a vector of uint32_t (which is what VkShaderModule expects)
+	std::vector<uint32_t> buffer(fileSize / sizeof(uint32_t));
+
 	file.seekg(0);
-	file.read(buffer.data(), fileSize);
+	file.read(reinterpret_cast<char*>(buffer.data()), fileSize);
 
 	return buffer;
 }
@@ -47,6 +59,7 @@ public:
 	VkPipeline GetToneMappingPipeline() const { return m_ToneMappingPipeline; }
 	VkPipelineLayout GetToneMappingPipelineLayout() const { return m_ToneMappingPipelineLayout; }
 
+	VkShaderModule CreateShaderModule(const std::vector<uint32_t>& code);
 private:
 	//(set 0 in both pipelines)
 	void CreateUniversalDescriptorSetLayout();
@@ -60,7 +73,6 @@ private:
 	void CreateLightingDescriptorSetLayout();
 	void SavePipelineCache();
 
-	VkShaderModule CreateShaderModule(const std::vector<char>& code);
 
 	VkPipelineCache m_PipelineCache;
 	VkDescriptorSetLayout m_UniversalDescriptorSetLayout;

@@ -10,6 +10,8 @@ add_executable(${PROJECT_NAME}
 "VulkanProject.cpp" 
 
 "Window/WindowManager.cpp"
+"Window/CameraManager.cpp"
+
 "Application/VulkanApplication.cpp"
 "Vulkan/VulkanSystem.cpp"
 
@@ -21,7 +23,7 @@ add_executable(${PROJECT_NAME}
 "Vulkan/source/CommandManager.cpp" 
 "Vulkan/source/Renderer.cpp" 
 "Vulkan/source/Scene.cpp"
-)
+  "Window/InputManager.cpp")
 
 include(FetchContent)
 
@@ -86,7 +88,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan::Vulkan glfw glm assimp)
 # Shader compilation
 set(SHADER_SOURCE_DIR "${CMAKE_SOURCE_DIR}/resources/shaders")
 set(SHADER_BINARY_DIR "${CMAKE_BINARY_DIR}/CustomShaders")
-file(GLOB SHADER_SOURCE_FILES "${SHADER_SOURCE_DIR}/*.vert" "${SHADER_SOURCE_DIR}/*.frag")
+file(GLOB SHADER_SOURCE_FILES "${SHADER_SOURCE_DIR}/*.vert" "${SHADER_SOURCE_DIR}/*.frag" "${SHADER_SOURCE_DIR}/*.comp")
 
 # Texture compilation
 set(TEXTURE_SOURCE_DIR "${CMAKE_SOURCE_DIR}/resources/textures")

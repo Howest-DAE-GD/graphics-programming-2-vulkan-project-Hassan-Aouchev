@@ -14,6 +14,7 @@ class SwapChain;
 class PipelineManager;
 class CommandManager;
 class Renderer;
+class CameraManager;
 class Scene;
 
 class VulkanSystem {
@@ -90,4 +91,5 @@ private:
     Renderer* m_Renderer = nullptr;
     SwapChain* m_SwapChain = nullptr;
     Scene* m_Scene = nullptr;
+    CameraManager* m_Camera = nullptr;
 };
